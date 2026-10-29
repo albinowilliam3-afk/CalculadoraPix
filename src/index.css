@@ -1,0 +1,460 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    /* Raw Light & Dark Modern Banking Tokens (Fallback first) */
+    --bg-app-light: #F5F7FB;
+    --bg-app-dark: #0B0E17;
+
+    --bg-header-light: rgba(245, 247, 251, 0.86);
+    --bg-header-dark: rgba(11, 14, 23, 0.86);
+
+    --bg-card-light: #FFFFFF;
+    --bg-card-dark: #151926;
+
+    --bg-subtle-light: #EFF2F9;
+    --bg-subtle-dark: #1E2436;
+
+    --bg-input-light: #F4F6FC;
+    --bg-input-dark: #0F131E;
+
+    --text-primary-light: #0B1026;
+    --text-primary-dark: #F8FAFC;
+
+    --text-secondary-light: #525E75;
+    --text-secondary-dark: #94A3B8;
+
+    --text-muted-light: #8A94A8;
+    --text-muted-dark: #64748B;
+
+    --border-subtle-light: rgba(15, 23, 42, 0.07);
+    --border-subtle-dark: rgba(255, 255, 255, 0.08);
+
+    --border-strong-light: rgba(91, 104, 246, 0.28);
+    --border-strong-dark: rgba(118, 130, 255, 0.32);
+
+    --brand-primary-light: #5664F5;
+    --brand-primary-dark: #7480FF;
+
+    --tab-active-bg-light: #0B1026;
+    --tab-active-bg-dark: #5664F5;
+    --tab-active-text-light: #FFFFFF;
+    --tab-active-text-dark: #FFFFFF;
+
+    --positive-text-light: #059669;
+    --positive-text-dark: #34D399;
+    --positive-bg-light: #ECFDF5;
+    --positive-bg-dark: rgba(16, 185, 129, 0.13);
+
+    --negative-text-light: #E11D48;
+    --negative-text-dark: #FB7185;
+
+    --shadow-card-light: 0 12px 32px -8px rgba(15, 23, 52, 0.06), 0 2px 6px rgba(15, 23, 52, 0.03);
+    --shadow-card-dark: 0 16px 36px -10px rgba(0, 0, 0, 0.45);
+
+    /* Fallback assignment for browsers without light-dark() */
+    --bg-app: var(--bg-app-light);
+    --bg-header: var(--bg-header-light);
+    --bg-card: var(--bg-card-light);
+    --bg-subtle: var(--bg-subtle-light);
+    --bg-input: var(--bg-input-light);
+    --text-primary: var(--text-primary-light);
+    --text-secondary: var(--text-secondary-light);
+    --text-muted: var(--text-muted-light);
+    --border-subtle: var(--border-subtle-light);
+    --border-strong: var(--border-strong-light);
+    --brand-primary: var(--brand-primary-light);
+    --tab-active-bg: var(--tab-active-bg-light);
+    --tab-active-text: var(--tab-active-text-light);
+    --positive-text: var(--positive-text-light);
+    --positive-bg: var(--positive-bg-light);
+    --negative-text: var(--negative-text-light);
+    --shadow-card: var(--shadow-card-light);
+
+    @media (prefers-color-scheme: dark) {
+      --bg-app: var(--bg-app-dark);
+      --bg-header: var(--bg-header-dark);
+      --bg-card: var(--bg-card-dark);
+      --bg-subtle: var(--bg-subtle-dark);
+      --bg-input: var(--bg-input-dark);
+      --text-primary: var(--text-primary-dark);
+      --text-secondary: var(--text-secondary-dark);
+      --text-muted: var(--text-muted-dark);
+      --border-subtle: var(--border-subtle-dark);
+      --border-strong: var(--border-strong-dark);
+      --brand-primary: var(--brand-primary-dark);
+      --tab-active-bg: var(--tab-active-bg-dark);
+      --tab-active-text: var(--tab-active-text-dark);
+      --positive-text: var(--positive-text-dark);
+      --positive-bg: var(--positive-bg-dark);
+      --negative-text: var(--negative-text-dark);
+      --shadow-card: var(--shadow-card-dark);
+    }
+
+    /* Modern light-dark() automatic resolution */
+    @supports (color: light-dark(white, black)) {
+      --bg-app: light-dark(var(--bg-app-light), var(--bg-app-dark));
+      --bg-header: light-dark(var(--bg-header-light), var(--bg-header-dark));
+      --bg-card: light-dark(var(--bg-card-light), var(--bg-card-dark));
+      --bg-subtle: light-dark(var(--bg-subtle-light), var(--bg-subtle-dark));
+      --bg-input: light-dark(var(--bg-input-light), var(--bg-input-dark));
+      --text-primary: light-dark(var(--text-primary-light), var(--text-primary-dark));
+      --text-secondary: light-dark(var(--text-secondary-light), var(--text-secondary-dark));
+      --text-muted: light-dark(var(--text-muted-light), var(--text-muted-dark));
+      --border-subtle: light-dark(var(--border-subtle-light), var(--border-subtle-dark));
+      --border-strong: light-dark(var(--border-strong-light), var(--border-strong-dark));
+      --brand-primary: light-dark(var(--brand-primary-light), var(--brand-primary-dark));
+      --tab-active-bg: light-dark(var(--tab-active-bg-light), var(--tab-active-bg-dark));
+      --tab-active-text: light-dark(var(--tab-active-text-light), var(--tab-active-text-dark));
+      --positive-text: light-dark(var(--positive-text-light), var(--positive-text-dark));
+      --positive-bg: light-dark(var(--positive-bg-light), var(--positive-bg-dark));
+      --negative-text: light-dark(var(--negative-text-light), var(--negative-text-dark));
+    }
+
+    /* Modern Web Guidance (`dark-mode` + `dark-mode-toggle`): sync :root with <meta name="color-scheme"> */
+    color-scheme: light dark;
+    accent-color: var(--brand-primary);
+    font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'One UI Sans', Roboto, sans-serif;
+
+    &:has(> head > meta[name="color-scheme"][content="dark"]) {
+      color-scheme: dark;
+      --shadow-card: var(--shadow-card-dark);
+    }
+
+    &:has(> head > meta[name="color-scheme"][content="light"]) {
+      color-scheme: light;
+      --shadow-card: var(--shadow-card-light);
+    }
+  }
+
+  html {
+    background-color: var(--bg-app);
+    color: var(--text-primary);
+    -webkit-tap-highlight-color: transparent;
+    scroll-behavior: smooth;
+  }
+
+  body {
+    min-height: 100dvh;
+    overflow-x: hidden;
+    background-color: var(--bg-app);
+    color: var(--text-primary);
+    transition: background-color 0.22s ease, color 0.22s ease;
+  }
+
+  /* Accessible focus ring (`forms`) */
+  input:focus-visible,
+  button:focus-visible,
+  a:focus-visible,
+  select:focus-visible {
+    outline: 2px solid var(--brand-primary);
+    outline-offset: 2px;
+  }
+
+  @media (pointer: coarse) {
+    input[type="text"] {
+      min-height: 52px;
+    }
+  }
+}
+
+/* Signature Neobank Card & Soft Surface Utilities */
+.bank-surface {
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  box-shadow: var(--shadow-card);
+}
+
+.bank-subtle {
+  background-color: var(--bg-subtle);
+}
+
+.bank-input {
+  background-color: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+}
+
+.bank-input:focus-within {
+  border-color: var(--brand-primary);
+  box-shadow: 0 0 0 3px rgba(86, 100, 245, 0.14);
+}
+
+/* Iconic Violet-Royal-Blue Virtual Card (inspired by reference banking UI) */
+.neobank-virtual-card {
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(135deg, #7B5CFA 0%, #5866F5 52%, #3B82F6 100%);
+  color: #FFFFFF;
+  box-shadow: 0 18px 38px -12px rgba(88, 102, 245, 0.45);
+}
+
+.neobank-virtual-card::before {
+  content: "";
+  position: absolute;
+  top: -35%;
+  right: -18%;
+  width: 72%;
+  height: 165%;
+  border-radius: 9999px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.16) 0%, rgba(255, 255, 255, 0.02) 100%);
+  transform: rotate(18deg);
+  pointer-events: none;
+}
+
+.neobank-limit-banner {
+  background: linear-gradient(135deg, #6D55F7 0%, #4E67F5 100%);
+  color: #FFFFFF;
+  box-shadow: 0 10px 26px -8px rgba(86, 100, 245, 0.38);
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+.pt-safe {
+  padding-top: max(0.75rem, env(safe-area-inset-top));
+}
+
+.pb-safe {
+  padding-bottom: max(1.5rem, env(safe-area-inset-bottom));
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* =========================================================================
+   Modern Web Guidance: Top-Layer Native <dialog> Entry/Exit Animations
+   (`light-dismiss-a-dialog` + `animate-to-from-top-layer`)
+   ========================================================================= */
+dialog.app-sheet {
+  margin: auto;
+  margin-bottom: 0;
+  width: 100%;
+  max-width: 32rem;
+  border: 1px solid var(--border-subtle);
+  border-bottom: 0;
+  border-radius: 2rem 2rem 0 0;
+  background-color: var(--bg-card);
+  color: var(--text-primary);
+  padding: 0;
+  box-shadow: 0 -18px 50px rgba(11, 16, 38, 0.25);
+
+  opacity: 0;
+  transform: translateY(28px) scale(0.98);
+  transition-property: opacity, transform, display, overlay;
+  transition-duration: 0.28s;
+  transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+  transition-behavior: allow-discrete;
+}
+
+@media (min-width: 640px) {
+  dialog.app-sheet {
+    margin: auto;
+    border-bottom: 1px solid var(--border-subtle);
+    border-radius: 2rem;
+    transform: translateY(12px) scale(0.96);
+  }
+}
+
+dialog.app-sheet::backdrop {
+  background-color: rgb(11 16 38 / 0);
+  backdrop-filter: blur(0px);
+  transition-property: background-color, backdrop-filter, display, overlay;
+  transition-duration: 0.28s;
+  transition-timing-function: ease-out;
+  transition-behavior: allow-discrete;
+}
+
+:is(dialog.app-sheet[open]):where(:not([data-closing])) {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+
+  @starting-style {
+    opacity: 0;
+    transform: translateY(28px) scale(0.98);
+  }
+
+  &::backdrop {
+    background-color: rgb(11 16 38 / 0.5);
+    backdrop-filter: blur(5px);
+
+    @starting-style {
+      background-color: rgb(11 16 38 / 0);
+      backdrop-filter: blur(0px);
+    }
+  }
+}
+
+/* =========================================================================
+   Centered Banking Alert Modal (`DavidWarningModal`) + 3D Shake Animation
+   (`light-dismiss-a-dialog`, `animate-to-from-top-layer`, `individual-transform-properties`)
+   ========================================================================= */
+dialog.app-alert-modal {
+  margin: auto;
+  width: calc(100% - 2rem);
+  max-width: 24.5rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: 2rem;
+  background-color: var(--bg-card);
+  color: var(--text-primary);
+  padding: 0;
+  box-shadow: 0 26px 64px -12px rgba(11, 16, 38, 0.38);
+
+  opacity: 0;
+  transform: translateY(18px) scale(0.92);
+  transition-property: opacity, transform, display, overlay;
+  transition-duration: 0.3s;
+  transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+  transition-behavior: allow-discrete;
+}
+
+dialog.app-alert-modal::backdrop {
+  background-color: rgb(11 16 38 / 0);
+  backdrop-filter: blur(0px);
+  transition-property: background-color, backdrop-filter, display, overlay;
+  transition-duration: 0.3s;
+  transition-timing-function: ease-out;
+  transition-behavior: allow-discrete;
+}
+
+:is(dialog.app-alert-modal[open]):where(:not([data-closing])) {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+
+  @starting-style {
+    opacity: 0;
+    transform: translateY(18px) scale(0.92);
+  }
+
+  &::backdrop {
+    background-color: rgb(11 16 38 / 0.56);
+    backdrop-filter: blur(6px);
+
+    @starting-style {
+      background-color: rgb(11 16 38 / 0);
+      backdrop-filter: blur(0px);
+    }
+  }
+}
+
+/* Identity transforms prevent stacking-context shift (`individual-transform-properties`) */
+.david-3d-emblem {
+  translate: 0px 0px;
+  rotate: 0deg;
+  scale: 1;
+  transition: scale 0.25s cubic-bezier(0.22, 1, 0.36, 1);
+  cursor: pointer;
+}
+
+.david-3d-emblem:hover {
+  scale: 1.05;
+}
+
+.david-3d-emblem:active {
+  scale: 0.96;
+}
+
+@supports not (translate: 0px) {
+  .david-3d-emblem:hover {
+    transform: scale(1.05);
+  }
+  .david-3d-emblem:active {
+    transform: scale(0.96);
+  }
+}
+
+.david-3d-emblem.is-shaking {
+  animation: davidDenyShake 0.72s cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+}
+
+.david-3d-coin-float {
+  translate: 0px 0px;
+  animation: davidCoinFloat 2.8s ease-in-out infinite;
+}
+
+@keyframes davidDenyShake {
+  0%, 100% {
+    translate: 0px 0px;
+    rotate: 0deg;
+  }
+  14% {
+    translate: -12px 0px;
+    rotate: -7deg;
+  }
+  28% {
+    translate: 11px -2px;
+    rotate: 7deg;
+  }
+  42% {
+    translate: -9px 0px;
+    rotate: -5deg;
+  }
+  58% {
+    translate: 7px -1px;
+    rotate: 4deg;
+  }
+  74% {
+    translate: -4px 0px;
+    rotate: -2deg;
+  }
+  88% {
+    translate: 2px 0px;
+    rotate: 1deg;
+  }
+}
+
+@keyframes davidCoinFloat {
+  0%, 100% {
+    translate: 0px 0px;
+  }
+  50% {
+    translate: 0px -5px;
+  }
+}
+
+/* =========================================================================
+   Modern Web Guidance: Same-Document View Transitions (`same-document-transitions`)
+   ========================================================================= */
+.active-tab-pill {
+  view-transition-name: active-ranking-tab;
+  background-color: var(--tab-active-bg);
+}
+
+::view-transition-old(active-ranking-tab),
+::view-transition-new(active-ranking-tab) {
+  height: 100%;
+  animation-duration: 0.22s;
+  animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  dialog.app-sheet,
+  dialog.app-sheet::backdrop,
+  dialog.app-alert-modal,
+  dialog.app-alert-modal::backdrop {
+    transform: none;
+    transition-duration: 0.08s;
+  }
+
+  :is(dialog.app-sheet[open], dialog.app-alert-modal[open]):where(:not([data-closing])) {
+    @starting-style {
+      transform: none;
+    }
+  }
+
+  .david-3d-emblem.is-shaking,
+  .david-3d-coin-float {
+    animation: none !important;
+  }
+
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation: none !important;
+  }
+}

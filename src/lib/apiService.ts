@@ -1,0 +1,921 @@
+import type {
+  LiveMarketBundle,
+  PixProviderNormalized,
+  PixQuotePair,
+  SpotUsdBrlQuote,
+  UsdProviderQuote,
+} from '../types/finance';
+
+const MARKET_CACHE_KEY = 'ars2brl_market_cache_v1';
+
+const PIX_PRETTY_NAMES: Record<string, string> = {
+  arq: 'ARQ (DolarApp)',
+  dolarapp: 'ARQ (DolarApp)',
+  cocos: 'Cocos Pix',
+  vesseo: 'Vesseo',
+  wallbit: 'Wallbit',
+  ripio: 'Ripio',
+  ripiopix: 'Ripio',
+  lemon: 'Lemon Cash',
+  lemoncashpix: 'Lemon Cash',
+  belo: 'Belo',
+  belopix: 'Belo',
+  fiwind: 'Fiwind',
+  astropay: 'AstroPay',
+  takenos: 'Takenos',
+  peanut: 'Peanut',
+  peanutpix: 'Peanut',
+  'mercado-pago': 'Mercado Pago',
+  mercadopago: 'Mercado Pago',
+  'personal-pay': 'Personal Pay',
+  personalpay: 'Personal Pay',
+  'yodl-pay': 'Yodl Pay',
+  p2pme: 'P2P.me',
+  global66: 'Global66',
+  wayni: 'Wayni',
+  caipi: 'Caipi',
+  satoshitango: 'Satoshi Tango',
+  prex: 'Prex',
+  decrypto: 'Decrypto',
+  binance: 'Binance Pay',
+  buepp: 'Buepp',
+  saldo: 'Saldo.ar',
+  'banco-credicoop': 'Banco Credicoop',
+  'banco-galicia': 'Banco Galicia',
+  'banco-santander': 'Santander',
+  'banco-nacion': 'Banco Nación',
+  'banco-macro': 'Banco Macro',
+  'banco-icbc': 'ICBC',
+  'banco-ciudad': 'Banco Ciudad',
+  'banco-patagonia': 'Banco Patagonia',
+  'banco-supervielle': 'Supervielle',
+  'banco-hipotecario': 'Hipotecario',
+  brubank: 'Brubank Pix',
+  uala: 'Ualá Pix',
+  plus: 'Plus',
+};
+
+const FALLBACK_LOGOS: Record<string, string> = {
+  dolarapp: 'https://images.compara.ar/arq.png',
+  arq: 'https://images.compara.ar/arq.png',
+  belopix: 'https://images.compara.ar/belo.png',
+  ripiopix: 'https://images.compara.ar/ripio.svg',
+  lemoncashpix: 'https://images.compara.ar/lemon.png',
+  mercadopago: 'https://images.compara.ar/mercado-pago.png',
+  personalpay: 'https://images.compara.ar/personal.png',
+  peanutpix: 'https://images.compara.ar/peanut.png',
+};
+
+async function fetchJsonStrict<T>(url: string, timeoutMs = 6500): Promise<T> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const res = await fetch(url, {
+      headers: { Accept: 'application/json' },
+      signal: controller.signal,
+    });
+
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status} on ${url}`);
+    }
+
+    const contentType = res.headers.get('content-type') || '';
+    const text = await res.text();
+
+    // Evita falso positivo caso SPA retorne index.html em vez de JSON
+    if (contentType.includes('text/html') || text.trimStart().startsWith('<!doctype')) {
+      throw new Error(`Received HTML instead of JSON from ${url}`);
+    }
+
+    return JSON.parse(text) as T;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+interface RawComparaPixEntry {
+  quotes?: PixQuotePair[];
+  logo?: string;
+  url?: string;
+  name?: string;
+  isPix?: boolean;
+  hasFees?: boolean;
+  updatedAt?: string;
+  stale?: boolean;
+}
+
+type RawComparaPixResponse = Record<string, RawComparaPixEntry>;
+
+function isArgentineBankSlug(slug: string): boolean {
+  return (
+    slug.startsWith('banco-') ||
+    slug === 'buepp' ||
+    slug === 'brubank' ||
+    slug === 'icbc'
+  );
+}
+
+function normalizeComparaPix(
+  raw: RawComparaPixResponse,
+  usdProviders: UsdProviderQuote[],
+  defaultOficialAsk: number,
+  defaultCriptoAsk: number
+): {
+  providers: PixProviderNormalized[];
+  arqLiveRate: number | null;
+  arqUsdPerBrl: number | null;
+} {
+  const usdAskBySlug = new Map<string, number>();
+  for (const u of usdProviders) {
+    if (u.ask && u.ask > 0) {
+      usdAskBySlug.set(u.slug, u.ask);
+    }
+  }
+
+  let arqLiveRate: number | null = null;
+  let arqUsdPerBrl: number | null = null;
+
+  // Primeiro passo: localizar ARQ para também ter referência cripto implícita caso necessário
+  const arqRaw = raw.arq || raw.dolarapp;
+  if (arqRaw?.quotes) {
+    const brlArs = arqRaw.quotes.find((q) => q.symbol === 'BRLARS');
+    const brlUsd = arqRaw.quotes.find((q) => q.symbol === 'BRLUSD' || q.symbol === 'BRLUSDT');
+    if (brlArs?.buy && brlArs.buy > 0) arqLiveRate = brlArs.buy;
+    if (brlUsd?.buy && brlUsd.buy > 0) arqUsdPerBrl = brlUsd.buy;
+  }
+
+  const inferredCriptoUsd =
+    arqLiveRate && arqUsdPerBrl && arqUsdPerBrl > 0
+      ? arqLiveRate / arqUsdPerBrl
+      : defaultCriptoAsk;
+
+  const providers: PixProviderNormalized[] = [];
+
+  for (const [slug, entry] of Object.entries(raw)) {
+    if (!entry || entry.isPix === false || !Array.isArray(entry.quotes)) {
+      continue;
+    }
+
+    const arsPair = entry.quotes.find((q) => q.symbol === 'BRLARS' && q.buy > 0);
+    const usdPair = entry.quotes.find(
+      (q) => (q.symbol === 'BRLUSD' || q.symbol === 'BRLUSDT') && q.buy > 0
+    );
+
+    const arsPerBrlDirect = arsPair ? arsPair.buy : null;
+    const usdPerBrl = usdPair ? usdPair.buy : null;
+    const usdSymbol = usdPair
+      ? (usdPair.symbol as 'BRLUSD' | 'BRLUSDT')
+      : null;
+
+    let effectiveArsPerBrl = arsPerBrlDirect;
+    let isEstimatedArs = false;
+    let estimationBasis: 'Oficial CBU' | 'Cripto/CCL' | undefined;
+
+    if (effectiveArsPerBrl === null && usdPerBrl !== null) {
+      isEstimatedArs = true;
+      if (isArgentineBankSlug(slug)) {
+        const bankSpecificAsk = usdAskBySlug.get(slug) || defaultOficialAsk;
+        effectiveArsPerBrl = usdPerBrl * bankSpecificAsk;
+        estimationBasis = 'Oficial CBU';
+      } else {
+        const providerUsdAsk = usdAskBySlug.get(slug) || inferredCriptoUsd;
+        effectiveArsPerBrl = usdPerBrl * providerUsdAsk;
+        estimationBasis = 'Cripto/CCL';
+      }
+    }
+
+    if (effectiveArsPerBrl === null || effectiveArsPerBrl <= 0) {
+      continue;
+    }
+
+    providers.push({
+      slug: slug === 'dolarapp' ? 'arq' : slug,
+      prettyName:
+        PIX_PRETTY_NAMES[slug] ||
+        entry.name ||
+        slug.replace(/-/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase()),
+      arsPerBrlDirect,
+      usdPerBrl,
+      usdSymbol,
+      effectiveArsPerBrl,
+      isEstimatedArs,
+      estimationBasis,
+      logo:
+        entry.logo ||
+        FALLBACK_LOGOS[slug] ||
+        `https://images.compara.ar/${slug}.png`,
+      url: entry.url || 'https://comparapix.ar',
+      isPix: true,
+      hasFees: Boolean(entry.hasFees),
+      updatedAt: entry.updatedAt || null,
+      stale: Boolean(entry.stale),
+    });
+  }
+
+  providers.sort(
+    (a, b) => (a.effectiveArsPerBrl ?? Infinity) - (b.effectiveArsPerBrl ?? Infinity)
+  );
+
+  return { providers, arqLiveRate, arqUsdPerBrl };
+}
+
+interface RawCriptoYaQuote {
+  ask?: number;
+  bid?: number;
+  time?: number;
+}
+
+type RawCriptoYaResponse = Record<string, Record<string, RawCriptoYaQuote | string>>;
+
+function normalizeCriptoYaFallback(
+  raw: RawCriptoYaResponse,
+  defaultOficialAsk: number,
+  defaultCriptoAsk: number
+): {
+  providers: PixProviderNormalized[];
+  arqLiveRate: number | null;
+  arqUsdPerBrl: number | null;
+} {
+  const nowSec = Date.now() / 1000;
+  const maxAgeSec = 60 * 60 * 24 * 5; // Ignora cotações mortas há > 5 dias (ex: pluscrypto antigo)
+
+  let arqLiveRate: number | null = null;
+  let arqUsdPerBrl: number | null = null;
+  const providers: PixProviderNormalized[] = [];
+
+  for (const [rawSlug, pairs] of Object.entries(raw)) {
+    if (!pairs || typeof pairs !== 'object') continue;
+
+    const brlArsObj =
+      typeof pairs['BRL-ARS'] === 'object' ? (pairs['BRL-ARS'] as RawCriptoYaQuote) : null;
+    const usdBrlObj =
+      typeof pairs['USD-BRL'] === 'object'
+        ? (pairs['USD-BRL'] as RawCriptoYaQuote)
+        : typeof pairs['USDT-BRL'] === 'object'
+          ? (pairs['USDT-BRL'] as RawCriptoYaQuote)
+          : null;
+
+    const sampleTime = brlArsObj?.time || usdBrlObj?.time || nowSec;
+    if (nowSec - sampleTime > maxAgeSec) continue;
+
+    const arsPerBrlDirect = brlArsObj?.ask && brlArsObj.ask > 0 ? brlArsObj.ask : null;
+    // Em CriptoYa, USD-BRL vem como ~5.36 BRL por 1 USD -> invertemos para USD por 1 BRL
+    const usdPerBrl =
+      usdBrlObj?.bid && usdBrlObj.bid > 0 ? 1 / usdBrlObj.bid : null;
+
+    const canonicalSlug =
+      rawSlug === 'dolarapp'
+        ? 'arq'
+        : rawSlug === 'belopix'
+          ? 'belo'
+          : rawSlug === 'ripiopix'
+            ? 'ripio'
+            : rawSlug === 'lemoncashpix'
+              ? 'lemon'
+              : rawSlug === 'peanutpix'
+                ? 'peanut'
+                : rawSlug;
+
+    if (canonicalSlug === 'arq') {
+      arqLiveRate = arsPerBrlDirect;
+      arqUsdPerBrl = usdPerBrl;
+    }
+
+    let effectiveArsPerBrl = arsPerBrlDirect;
+    let isEstimatedArs = false;
+    let estimationBasis: 'Oficial CBU' | 'Cripto/CCL' | undefined;
+
+    if (effectiveArsPerBrl === null && usdPerBrl !== null) {
+      isEstimatedArs = true;
+      if (isArgentineBankSlug(canonicalSlug)) {
+        effectiveArsPerBrl = usdPerBrl * defaultOficialAsk;
+        estimationBasis = 'Oficial CBU';
+      } else {
+        effectiveArsPerBrl = usdPerBrl * defaultCriptoAsk;
+        estimationBasis = 'Cripto/CCL';
+      }
+    }
+
+    if (!effectiveArsPerBrl || effectiveArsPerBrl <= 0) continue;
+
+    providers.push({
+      slug: canonicalSlug,
+      prettyName:
+        PIX_PRETTY_NAMES[rawSlug] ||
+        PIX_PRETTY_NAMES[canonicalSlug] ||
+        canonicalSlug.toUpperCase(),
+      arsPerBrlDirect,
+      usdPerBrl,
+      usdSymbol: pairs['USDT-BRL'] ? 'BRLUSDT' : usdPerBrl ? 'BRLUSD' : null,
+      effectiveArsPerBrl,
+      isEstimatedArs,
+      estimationBasis,
+      logo:
+        FALLBACK_LOGOS[rawSlug] ||
+        FALLBACK_LOGOS[canonicalSlug] ||
+        `https://images.compara.ar/${canonicalSlug}.png`,
+      url: 'https://comparapix.ar',
+      isPix: true,
+      hasFees: canonicalSlug === 'lemon',
+      updatedAt: new Date(sampleTime * 1000).toISOString(),
+      stale: false,
+    });
+  }
+
+  providers.sort(
+    (a, b) => (a.effectiveArsPerBrl ?? Infinity) - (b.effectiveArsPerBrl ?? Infinity)
+  );
+
+  return { providers, arqLiveRate, arqUsdPerBrl };
+}
+
+interface RawComparaDolarItem {
+  slug: string;
+  name: string;
+  bid: number | null;
+  ask: number | null;
+  logoUrl?: string;
+  is24x7?: boolean;
+  url?: string;
+  prettyName?: string;
+  pct_variation?: number | null;
+  isBank?: boolean;
+  usdType?: string;
+  lastSeenAt?: string | null;
+  stale?: boolean;
+}
+
+async function fetchUsdProviders(): Promise<{
+  usdProviders: UsdProviderQuote[];
+  oficialBanks: UsdProviderQuote[];
+  source: 'comparadolar' | 'comparadolar-proxy';
+}> {
+  let rawList: RawComparaDolarItem[] | null = null;
+  let source: 'comparadolar' | 'comparadolar-proxy' = 'comparadolar';
+
+  // ComparaDólar tem CORS aberto (`access-control-allow-origin: *`) — tentamos direto primeiro para menor latência!
+  try {
+    rawList = await fetchJsonStrict<RawComparaDolarItem[]>(
+      'https://api.comparadolar.ar/usd',
+      6000
+    );
+  } catch {
+    rawList = await fetchJsonStrict<RawComparaDolarItem[]>('/api/comparadolar', 6500);
+    source = 'comparadolar-proxy';
+  }
+
+  const usdProviders: UsdProviderQuote[] = (rawList || [])
+    .filter((item) => item && typeof item.ask === 'number' && item.ask > 0)
+    .map((item) => ({
+      slug: item.slug,
+      name: item.name,
+      prettyName: item.prettyName || item.name,
+      bid: typeof item.bid === 'number' ? item.bid : null,
+      ask: item.ask,
+      logoUrl:
+        item.logoUrl ||
+        `https://api.argentinadatos.com/static/logos/${item.slug}.png`,
+      is24x7: Boolean(item.is24x7),
+      url: item.url || 'https://comparadolar.ar',
+      pctVariation: typeof item.pct_variation === 'number' ? item.pct_variation : null,
+      isBank: Boolean(item.isBank),
+      usdType: item.usdType || 'Oficial',
+      lastSeenAt: item.lastSeenAt || null,
+      stale: Boolean(item.stale),
+    }))
+    .sort((a, b) => (a.ask ?? Infinity) - (b.ask ?? Infinity));
+
+  const oficialBanks = usdProviders.filter(
+    (p) => p.usdType.toLowerCase() === 'oficial' && p.ask && p.ask > 0
+  );
+
+  return { usdProviders, oficialBanks, source };
+}
+
+async function fetchSpotUsdBrl(): Promise<SpotUsdBrlQuote | null> {
+  // Tentativa 1: AwesomeAPI direto (possui CORS `*`)
+  try {
+    const data = await fetchJsonStrict<{
+      USDBRL?: {
+        bid?: string;
+        ask?: string;
+        pctChange?: string;
+        create_date?: string;
+      };
+    }>('https://economia.awesomeapi.com.br/json/last/USD-BRL', 5500);
+
+    const bid = Number.parseFloat(data.USDBRL?.bid || '');
+    const ask = Number.parseFloat(data.USDBRL?.ask || '');
+    const pctChange = Number.parseFloat(data.USDBRL?.pctChange || '0');
+
+    if (Number.isFinite(bid) && bid > 1) {
+      return {
+        bid,
+        ask: Number.isFinite(ask) ? ask : bid,
+        pctChange: Number.isFinite(pctChange) ? pctChange : 0,
+        updatedAt: new Date().toISOString(),
+        source: 'awesomeapi',
+      };
+    }
+  } catch {
+    // Segue para tentativa 2
+  }
+
+  // Tentativa 2: Proxy serverless /api/usdbrl
+  try {
+    const data = await fetchJsonStrict<{
+      USDBRL?: { bid?: string; ask?: string; pctChange?: string };
+      rates?: { BRL?: number };
+    }>('/api/usdbrl', 5500);
+
+    if (data.USDBRL?.bid) {
+      const bid = Number.parseFloat(data.USDBRL.bid);
+      if (Number.isFinite(bid) && bid > 1) {
+        return {
+          bid,
+          ask: Number.parseFloat(data.USDBRL.ask || String(bid)),
+          pctChange: Number.parseFloat(data.USDBRL.pctChange || '0'),
+          updatedAt: new Date().toISOString(),
+          source: 'awesomeapi',
+        };
+      }
+    }
+    if (data.rates?.BRL && data.rates.BRL > 1) {
+      return {
+        bid: data.rates.BRL,
+        ask: data.rates.BRL,
+        pctChange: 0,
+        updatedAt: new Date().toISOString(),
+        source: 'er-api',
+      };
+    }
+  } catch {
+    // Segue para tentativa 3
+  }
+
+  // Tentativa 3: Open ExchangeRate API pública com CORS aberto
+  try {
+    const er = await fetchJsonStrict<{ rates?: { BRL?: number } }>(
+      'https://open.er-api.com/v6/latest/USD',
+      5500
+    );
+    if (er.rates?.BRL && er.rates.BRL > 1) {
+      return {
+        bid: er.rates.BRL,
+        ask: er.rates.BRL,
+        pctChange: 0,
+        updatedAt: new Date().toISOString(),
+        source: 'er-api',
+      };
+    }
+  } catch {
+    // Será inferido via ARQ / fallback
+  }
+
+  return null;
+}
+
+async function fetchPixProvidersWithFallbacks(
+  usdProviders: UsdProviderQuote[],
+  defaultOficialAsk: number,
+  defaultCriptoAsk: number
+): Promise<{
+  providers: PixProviderNormalized[];
+  arqLiveRate: number | null;
+  arqUsdPerBrl: number | null;
+  source: 'comparapix-proxy' | 'comparapix-cors' | 'criptoya';
+}> {
+  // Camada 1: Rota Proxy (Netlify Function `/api/comparapix` ou Vite Dev Proxy)
+  try {
+    const raw = await fetchJsonStrict<RawComparaPixResponse>('/api/comparapix', 6000);
+    const parsed = normalizeComparaPix(raw, usdProviders, defaultOficialAsk, defaultCriptoAsk);
+    if (parsed.providers.length > 0) {
+      return { ...parsed, source: 'comparapix-proxy' };
+    }
+  } catch {
+    // Continua para camada 2
+  }
+
+  // Camada 2: CORS Proxies públicos caso o usuário suba apenas a pasta `dist` estática sem Functions
+  const corsProxies = [
+    `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent('https://api.comparapix.ar/quotes')}`,
+    `https://api.allorigins.win/raw?url=${encodeURIComponent('https://api.comparapix.ar/quotes')}`,
+  ];
+
+  for (const proxyUrl of corsProxies) {
+    try {
+      const raw = await fetchJsonStrict<RawComparaPixResponse>(proxyUrl, 6000);
+      const parsed = normalizeComparaPix(raw, usdProviders, defaultOficialAsk, defaultCriptoAsk);
+      if (parsed.providers.length > 0) {
+        return { ...parsed, source: 'comparapix-cors' };
+      }
+    } catch {
+      // Tenta próximo proxy
+    }
+  }
+
+  // Camada 3: CriptoYa Pix API (CORS `*` nativo, inclui DolarApp/ARQ, Cocos, Belo, Ripio, Lemon, Fiwind...)
+  const criptoYaRaw = await fetchJsonStrict<RawCriptoYaResponse>(
+    'https://criptoya.com/api/pix',
+    6500
+  );
+  const parsedFallback = normalizeCriptoYaFallback(
+    criptoYaRaw,
+    defaultOficialAsk,
+    defaultCriptoAsk
+  );
+  if (parsedFallback.providers.length === 0) {
+    throw new Error('All Pix APIs returned empty provider list');
+  }
+  return { ...parsedFallback, source: 'criptoya' };
+}
+
+export function loadCachedMarketBundle(): LiveMarketBundle | null {
+  try {
+    const raw = localStorage.getItem(MARKET_CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as LiveMarketBundle;
+    if (!parsed || !Array.isArray(parsed.pixProviders)) return null;
+    return { ...parsed, isFromCache: true };
+  } catch {
+    return null;
+  }
+}
+
+function saveCachedMarketBundle(bundle: LiveMarketBundle): void {
+  try {
+    localStorage.setItem(MARKET_CACHE_KEY, JSON.stringify(bundle));
+  } catch {
+    // Ignore storage quota errors
+  }
+}
+
+/**
+ * Fallback inicial calibrado caso o celular abra pela 1ª vez totalmente sem rede (modo avião).
+ */
+export const CALIBRATED_FALLBACK_BUNDLE: LiveMarketBundle = {
+  arqLiveRate: 307.21,
+  arqUsdPerBrl: 0.1863,
+  pixProviders: [
+    {
+      slug: 'cocos',
+      prettyName: 'Cocos Pix',
+      arsPerBrlDirect: 306.67,
+      usdPerBrl: 0.1982,
+      usdSymbol: 'BRLUSD',
+      effectiveArsPerBrl: 306.67,
+      isEstimatedArs: false,
+      logo: 'https://images.compara.ar/cocos.png',
+      url: 'https://comparapix.ar',
+      isPix: true,
+      hasFees: false,
+      updatedAt: null,
+      stale: false,
+    },
+    {
+      slug: 'arq',
+      prettyName: 'ARQ (DolarApp)',
+      arsPerBrlDirect: 307.21,
+      usdPerBrl: 0.1863,
+      usdSymbol: 'BRLUSD',
+      effectiveArsPerBrl: 307.21,
+      isEstimatedArs: false,
+      logo: 'https://images.compara.ar/arq.png',
+      url: 'https://comparapix.ar',
+      isPix: true,
+      hasFees: false,
+      updatedAt: null,
+      stale: false,
+    },
+    {
+      slug: 'ripio',
+      prettyName: 'Ripio',
+      arsPerBrlDirect: 310.29,
+      usdPerBrl: 0.1875,
+      usdSymbol: 'BRLUSDT',
+      effectiveArsPerBrl: 310.29,
+      isEstimatedArs: false,
+      logo: 'https://images.compara.ar/ripio.svg',
+      url: 'https://comparapix.ar',
+      isPix: true,
+      hasFees: false,
+      updatedAt: null,
+      stale: false,
+    },
+    {
+      slug: 'vesseo',
+      prettyName: 'Vesseo',
+      arsPerBrlDirect: 310.76,
+      usdPerBrl: 0.1873,
+      usdSymbol: 'BRLUSDT',
+      effectiveArsPerBrl: 310.76,
+      isEstimatedArs: false,
+      logo: 'https://images.compara.ar/vesseo.svg',
+      url: 'https://comparapix.ar',
+      isPix: true,
+      hasFees: false,
+      updatedAt: null,
+      stale: false,
+    },
+    {
+      slug: 'astropay',
+      prettyName: 'AstroPay',
+      arsPerBrlDirect: 310.8,
+      usdPerBrl: 0.1902,
+      usdSymbol: 'BRLUSD',
+      effectiveArsPerBrl: 310.8,
+      isEstimatedArs: false,
+      logo: 'https://images.compara.ar/astropay.png',
+      url: 'https://comparapix.ar',
+      isPix: true,
+      hasFees: false,
+      updatedAt: null,
+      stale: false,
+    },
+    {
+      slug: 'fiwind',
+      prettyName: 'Fiwind',
+      arsPerBrlDirect: 313.4,
+      usdPerBrl: 0.1894,
+      usdSymbol: 'BRLUSDT',
+      effectiveArsPerBrl: 313.4,
+      isEstimatedArs: false,
+      logo: 'https://images.compara.ar/fiwind.png',
+      url: 'https://comparapix.ar',
+      isPix: true,
+      hasFees: false,
+      updatedAt: null,
+      stale: false,
+    },
+    {
+      slug: 'belo',
+      prettyName: 'Belo',
+      arsPerBrlDirect: 317.7,
+      usdPerBrl: 0.192,
+      usdSymbol: 'BRLUSDT',
+      effectiveArsPerBrl: 317.7,
+      isEstimatedArs: false,
+      logo: 'https://images.compara.ar/belo.png',
+      url: 'https://comparapix.ar',
+      isPix: true,
+      hasFees: false,
+      updatedAt: null,
+      stale: false,
+    },
+    {
+      slug: 'lemon',
+      prettyName: 'Lemon Cash',
+      arsPerBrlDirect: 317.87,
+      usdPerBrl: 0.1906,
+      usdSymbol: 'BRLUSD',
+      effectiveArsPerBrl: 317.87,
+      isEstimatedArs: false,
+      logo: 'https://images.compara.ar/lemon.png',
+      url: 'https://comparapix.ar',
+      isPix: true,
+      hasFees: true,
+      updatedAt: null,
+      stale: false,
+    },
+  ],
+  usdProviders: [
+    {
+      slug: 'brubank-ultra',
+      name: 'brubank',
+      prettyName: 'Brubank',
+      bid: 1520,
+      ask: 1547,
+      logoUrl: 'https://api.argentinadatos.com/static/logos/brubank.png',
+      is24x7: true,
+      url: 'https://comparadolar.ar',
+      pctVariation: 0,
+      isBank: true,
+      usdType: 'Oficial',
+      lastSeenAt: null,
+      stale: false,
+    },
+    {
+      slug: 'cocos-bank',
+      name: 'cocos-bank',
+      prettyName: 'Cocos Bank',
+      bid: 1538,
+      ask: 1549,
+      logoUrl: 'https://api.argentinadatos.com/static/logos/cocos.png',
+      is24x7: true,
+      url: 'https://comparadolar.ar',
+      pctVariation: 0,
+      isBank: true,
+      usdType: 'Oficial',
+      lastSeenAt: null,
+      stale: false,
+    },
+    {
+      slug: 'uala',
+      name: 'uala',
+      prettyName: 'Ualá',
+      bid: 1535,
+      ask: 1553,
+      logoUrl: 'https://api.argentinadatos.com/static/logos/uala.png',
+      is24x7: true,
+      url: 'https://comparadolar.ar',
+      pctVariation: 0,
+      isBank: true,
+      usdType: 'Oficial',
+      lastSeenAt: null,
+      stale: false,
+    },
+    {
+      slug: 'reba',
+      name: 'reba',
+      prettyName: 'Reba',
+      bid: 1490,
+      ask: 1555,
+      logoUrl: 'https://api.argentinadatos.com/static/logos/reba.png',
+      is24x7: true,
+      url: 'https://comparadolar.ar',
+      pctVariation: 0,
+      isBank: false,
+      usdType: 'Oficial',
+      lastSeenAt: null,
+      stale: false,
+    },
+    {
+      slug: 'banco-nacion',
+      name: 'banco-nacion',
+      prettyName: 'Banco Nación',
+      bid: 1510,
+      ask: 1560,
+      logoUrl: 'https://api.argentinadatos.com/static/logos/banco-nacion.png',
+      is24x7: false,
+      url: 'https://comparadolar.ar',
+      pctVariation: 0,
+      isBank: true,
+      usdType: 'Oficial',
+      lastSeenAt: null,
+      stale: false,
+    },
+  ],
+  oficialBanks: [
+    {
+      slug: 'brubank-ultra',
+      name: 'brubank',
+      prettyName: 'Brubank',
+      bid: 1520,
+      ask: 1547,
+      logoUrl: 'https://api.argentinadatos.com/static/logos/brubank.png',
+      is24x7: true,
+      url: 'https://comparadolar.ar',
+      pctVariation: 0,
+      isBank: true,
+      usdType: 'Oficial',
+      lastSeenAt: null,
+      stale: false,
+    },
+    {
+      slug: 'cocos-bank',
+      name: 'cocos-bank',
+      prettyName: 'Cocos Bank',
+      bid: 1538,
+      ask: 1549,
+      logoUrl: 'https://api.argentinadatos.com/static/logos/cocos.png',
+      is24x7: true,
+      url: 'https://comparadolar.ar',
+      pctVariation: 0,
+      isBank: true,
+      usdType: 'Oficial',
+      lastSeenAt: null,
+      stale: false,
+    },
+    {
+      slug: 'uala',
+      name: 'uala',
+      prettyName: 'Ualá',
+      bid: 1535,
+      ask: 1553,
+      logoUrl: 'https://api.argentinadatos.com/static/logos/uala.png',
+      is24x7: true,
+      url: 'https://comparadolar.ar',
+      pctVariation: 0,
+      isBank: true,
+      usdType: 'Oficial',
+      lastSeenAt: null,
+      stale: false,
+    },
+    {
+      slug: 'reba',
+      name: 'reba',
+      prettyName: 'Reba',
+      bid: 1490,
+      ask: 1555,
+      logoUrl: 'https://api.argentinadatos.com/static/logos/reba.png',
+      is24x7: true,
+      url: 'https://comparadolar.ar',
+      pctVariation: 0,
+      isBank: false,
+      usdType: 'Oficial',
+      lastSeenAt: null,
+      stale: false,
+    },
+  ],
+  spotUsdBrl: {
+    bid: 5.3955,
+    ask: 5.3967,
+    pctChange: 0,
+    updatedAt: new Date().toISOString(),
+    source: 'fallback',
+  },
+  fetchedAt: new Date().toISOString(),
+  pixSource: 'cache',
+  usdSource: 'cache',
+  isFromCache: true,
+};
+
+export async function fetchLiveMarketBundle(): Promise<LiveMarketBundle> {
+  const cached = loadCachedMarketBundle();
+
+  // Dispara ComparaDólar e Spot USD/BRL em paralelo primeiro para alimentar estimativas USD de Pix
+  const [usdResult, spotResult] = await Promise.allSettled([
+    fetchUsdProviders(),
+    fetchSpotUsdBrl(),
+  ]);
+
+  const usdData =
+    usdResult.status === 'fulfilled'
+      ? usdResult.value
+      : {
+          usdProviders: cached?.usdProviders ?? CALIBRATED_FALLBACK_BUNDLE.usdProviders,
+          oficialBanks: cached?.oficialBanks ?? CALIBRATED_FALLBACK_BUNDLE.oficialBanks,
+          source: 'cache' as const,
+        };
+
+  const bestOficialAsk = usdData.oficialBanks[0]?.ask ?? 1547;
+  const criptoCandidates = usdData.usdProviders.filter(
+    (p) => (p.usdType === 'Cripto' || p.usdType === 'CCL') && p.ask && p.ask > 0
+  );
+  const avgCriptoAsk =
+    criptoCandidates.length > 0
+      ? criptoCandidates.reduce((acc, item) => acc + (item.ask || 0), 0) /
+        criptoCandidates.length
+      : 1645;
+
+  let pixProviders = cached?.pixProviders ?? CALIBRATED_FALLBACK_BUNDLE.pixProviders;
+  let arqLiveRate = cached?.arqLiveRate ?? CALIBRATED_FALLBACK_BUNDLE.arqLiveRate;
+  let arqUsdPerBrl = cached?.arqUsdPerBrl ?? CALIBRATED_FALLBACK_BUNDLE.arqUsdPerBrl;
+  let pixSource: LiveMarketBundle['pixSource'] = 'cache';
+
+  try {
+    const pixData = await fetchPixProvidersWithFallbacks(
+      usdData.usdProviders,
+      bestOficialAsk,
+      avgCriptoAsk
+    );
+    pixProviders = pixData.providers;
+    arqLiveRate = pixData.arqLiveRate ?? arqLiveRate;
+    arqUsdPerBrl = pixData.arqUsdPerBrl ?? arqUsdPerBrl;
+    pixSource = pixData.source;
+  } catch {
+    // Mantém dados do cache se todas as 3 camadas Pix falharem (offline total)
+  }
+
+  let spotUsdBrl: SpotUsdBrlQuote;
+  if (spotResult.status === 'fulfilled' && spotResult.value) {
+    spotUsdBrl = spotResult.value;
+  } else if (arqUsdPerBrl && arqUsdPerBrl > 0) {
+    // Inferência inteligente a partir da relação USD/BRL do próprio ARQ + spread típico (~0,5%)
+    const inferredBid = (1 / arqUsdPerBrl) * 1.005;
+    spotUsdBrl = {
+      bid: inferredBid,
+      ask: inferredBid,
+      pctChange: 0,
+      updatedAt: new Date().toISOString(),
+      source: 'inferred',
+    };
+  } else {
+    spotUsdBrl = cached?.spotUsdBrl ?? CALIBRATED_FALLBACK_BUNDLE.spotUsdBrl;
+  }
+
+  const isAllCache = pixSource === 'cache' && usdData.source === 'cache';
+  if (isAllCache && !cached) {
+    throw new Error('Offline sem cache prévio');
+  }
+
+  const bundle: LiveMarketBundle = {
+    pixProviders,
+    arqLiveRate,
+    arqUsdPerBrl,
+    usdProviders: usdData.usdProviders,
+    oficialBanks: usdData.oficialBanks,
+    spotUsdBrl,
+    fetchedAt: new Date().toISOString(),
+    pixSource,
+    usdSource: usdData.source,
+    isFromCache: isAllCache,
+  };
+
+  if (!isAllCache) {
+    saveCachedMarketBundle(bundle);
+  }
+
+  return bundle;
+}
