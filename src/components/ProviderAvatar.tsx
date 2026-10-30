@@ -46,3 +46,23 @@ export const ProviderAvatar: React.FC<ProviderAvatarProps> = ({
     />
   );
 };
+
+/**
+ * Ícone geométrico moderno estilo símbolo do Pix
+ */
+export const PixDiamondIcon: React.FC<{ className?: string }> = ({ className }) => (
+  <svg
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2.1"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    className={className}
+    aria-hidden="true"
+  >
+    <path d="M14.8 4.2a2.8 2.8 0 0 0-5.6 0l-5 5a2.8 2.8 0 0 0 0 5.6l5 5a2.8 2.8 0 0 0 5.6 0l5-5a2.8 2.8 0 0 0 0-5.6l-5-5Z" />
+    <path d="M8.5 9.5 12 13l3.5-3.5" />
+    <path d="M8.5 14.5 12 11l3.5 3.5" />
+  </svg>
+);

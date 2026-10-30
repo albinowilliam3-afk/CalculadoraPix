@@ -28,7 +28,8 @@ import type {
   PixProviderNormalized,
   UsdProviderQuote,
 } from '../types/finance';
-import { ProviderAvatar } from './ProviderAvatar';
+import { PixDiamondIcon, ProviderAvatar } from './ProviderAvatar';
+import { PixCurrencyModal } from './PixCurrencyModal';
 
 interface SmartConverterHeroProps {
   paymentMode: PaymentMode;
@@ -141,6 +142,7 @@ export const SmartConverterHero: React.FC<SmartConverterHeroProps> = ({
   onOpenHighSpendModal,
 }) => {
   const [showCardDetails, setShowCardDetails] = useState(false);
+  const [showPixCurrencyModal, setShowPixCurrencyModal] = useState(false);
   const cardHeadingRef = useRef<HTMLDivElement>(null);
 
   const isCardMode = paymentMode === 'card';
@@ -215,10 +217,22 @@ export const SmartConverterHero: React.FC<SmartConverterHeroProps> = ({
   const baseArs = Math.min(totalCardArs, totalPixArs);
   const diffPctArs = baseArs > 0 ? (diffArsAbs / baseArs) * 100 : 0;
 
+  // Nomes limpos sem rótulo manual desnecessário
+  const cleanPixName = activePixName
+    .replace(/\s*\(manual\)\)?/gi, '')
+    .replace(/\s*\(MODO\)\)?/gi, '')
+    .replace('ARQ (DolarApp)', 'ARQ')
+    .trim();
+
+  const cleanBankName = activeBankName
+    .replace(/\s*\(manual\)\)?/gi, '')
+    .replace(/\s*\(MODO\)\)?/gi, '')
+    .trim();
+
   // Comparação de vantagem (Economiza vs Perde):
-  // Rende MAIS Pesos quem tem maior totalArs (vantagem para quem entrega mais)
-  const cardSaves = totalCardArs >= totalPixArs;
-  const pixSaves = totalPixArs > totalCardArs;
+  // Na perspectiva "Você vai pagar em Pesos", pagar menos é economizar!
+  const cardSaves = totalCardArs <= totalPixArs;
+  const pixSaves = totalPixArs <= totalCardArs;
 
   // Número principal exibido gigante dentro do cartão (Roxo ou Verde)
   const primaryDisplayFormatted = formatArs(
@@ -344,43 +358,44 @@ export const SmartConverterHero: React.FC<SmartConverterHeroProps> = ({
                   : 'Quanto custa em Euro?'}
             </label>
 
-            {/* Seletor simples de moeda: Cartão aceita BRL/USD/EUR; Pix aceita exclusivamente Reais */}
-            {isCardMode ? (
-              <div
-                role="group"
-                aria-label="Escolher moeda digitada"
-                className="bank-subtle inline-flex items-center gap-0.5 rounded-full p-0.5"
-              >
-                {(
-                  [
-                    { id: 'BRL', label: 'R$ Reais' },
-                    { id: 'USD', label: 'US$ Dólar' },
-                    { id: 'EUR', label: '€ Euro' },
-                  ] as const
-                ).map((curr) => {
-                  const active = inputCurrency === curr.id;
-                  return (
-                    <button
-                      key={curr.id}
-                      type="button"
-                      onClick={() => onChangeInputCurrency(curr.id)}
-                      aria-pressed={active}
-                      className={`rounded-full px-2.5 py-1 text-[11px] font-bold transition active:scale-95 ${
-                        active
+            {/* Seletor simples de moeda: Sempre mantém R$ Reais, US$ Dólar e € Euro visíveis para transição suave */}
+            <div
+              role="group"
+              aria-label="Escolher moeda digitada"
+              className="bank-subtle inline-flex items-center gap-0.5 rounded-full p-0.5"
+            >
+              {(
+                [
+                  { id: 'BRL', label: 'R$ Reais' },
+                  { id: 'USD', label: 'US$ Dólar' },
+                  { id: 'EUR', label: '€ Euro' },
+                ] as const
+              ).map((curr) => {
+                const active = inputCurrency === curr.id;
+                return (
+                  <button
+                    key={curr.id}
+                    type="button"
+                    onClick={() => {
+                      if (curr.id !== 'BRL' && paymentMode === 'pix') {
+                        switchPaymentModeSmooth('card');
+                      }
+                      onChangeInputCurrency(curr.id);
+                    }}
+                    aria-pressed={active}
+                    className={`rounded-full px-2.5 py-1 text-[11px] font-bold transition active:scale-95 ${
+                      active
+                        ? isCardMode
                           ? 'bg-[var(--bg-card)] text-[var(--brand-primary)] shadow-sm'
-                          : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'
-                      }`}
-                    >
-                      {curr.label}
-                    </button>
-                  );
-                })}
-              </div>
-            ) : (
-              <span className="bank-subtle inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-bold text-[var(--text-secondary)]">
-                R$ Reais
-              </span>
-            )}
+                          : 'bg-[var(--bg-card)] text-emerald-600 dark:text-emerald-400 shadow-sm'
+                        : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'
+                    }`}
+                  >
+                    {curr.label}
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
           <div className="bank-input flex items-center rounded-2xl px-4 py-3 transition">
@@ -483,29 +498,48 @@ export const SmartConverterHero: React.FC<SmartConverterHeroProps> = ({
               </span>
             </button>
 
-            <button
-              role="tab"
-              type="button"
-              aria-selected={!isCardMode}
-              onClick={() => switchPaymentModeSmooth('pix')}
-              className="relative flex min-h-[42px] items-center justify-center gap-1.5 rounded-xl px-3 py-2 text-xs font-extrabold transition"
-            >
-              {!isCardMode && (
-                <span className="active-payment-pix-pill absolute inset-0 rounded-xl shadow-md shadow-emerald-500/25" />
-              )}
-              <PixDiamondIcon
-                className={`relative z-10 h-4 w-4 ${
-                  !isCardMode ? 'text-white' : 'text-[var(--text-muted)]'
-                }`}
-              />
-              <span
-                className={`relative z-10 ${
-                  !isCardMode ? 'text-white' : 'text-[var(--text-secondary)]'
-                }`}
+            {inputCurrency === 'BRL' ? (
+              <button
+                role="tab"
+                type="button"
+                aria-selected={!isCardMode}
+                onClick={() => switchPaymentModeSmooth('pix')}
+                className="relative flex min-h-[42px] items-center justify-center gap-1.5 rounded-xl px-3 py-2 text-xs font-extrabold transition"
               >
-                Transferência Pix
-              </span>
-            </button>
+                {!isCardMode && (
+                  <span className="active-payment-pix-pill absolute inset-0 rounded-xl shadow-md shadow-emerald-500/25" />
+                )}
+                <PixDiamondIcon
+                  className={`relative z-10 h-4 w-4 ${
+                    !isCardMode ? 'text-white' : 'text-[var(--text-muted)]'
+                  }`}
+                />
+                <span
+                  className={`relative z-10 ${
+                    !isCardMode ? 'text-white' : 'text-[var(--text-secondary)]'
+                  }`}
+                >
+                  Transferência Pix
+                </span>
+              </button>
+            ) : (
+              <button
+                role="tab"
+                type="button"
+                aria-selected={false}
+                onClick={() => setShowPixCurrencyModal(true)}
+                title="Pix opera apenas em Reais (R$) — toque para ver como usar"
+                className="relative flex min-h-[42px] items-center justify-center gap-1.5 rounded-xl px-3 py-2 text-xs font-extrabold transition opacity-45 cursor-pointer hover:opacity-65"
+              >
+                <PixDiamondIcon className="h-4 w-4 text-[var(--text-muted)]" />
+                <span className="text-[var(--text-muted)] line-through sm:no-underline">
+                  Transferência Pix
+                </span>
+                <span className="hidden sm:inline-block rounded-md bg-[var(--bg-card)] px-1.5 py-0.5 text-[9px] font-semibold text-[var(--text-muted)] border border-[var(--border-subtle)]">
+                  R$ apenas
+                </span>
+              </button>
+            )}
           </div>
         </div>
 
@@ -549,8 +583,8 @@ export const SmartConverterHero: React.FC<SmartConverterHeroProps> = ({
 
               <span className="truncate text-xs sm:text-[13px] font-extrabold text-white">
                 {isCardMode
-                  ? `Cartão de Crédito - ${activeBankName}`
-                  : `Transferência Pix - ${activePixName}`}
+                  ? `Cartão • ${cleanBankName}`
+                  : `Pix • ${cleanPixName}`}
               </span>
             </div>
 
@@ -599,65 +633,75 @@ export const SmartConverterHero: React.FC<SmartConverterHeroProps> = ({
           </div>
 
           {/* Barra Comparativa Direta em Linguagem Simples (Cartão vs Pix) */}
-          <div className="relative z-10 mt-4 flex items-center justify-between gap-2 rounded-2xl bg-black/18 px-3.5 py-2.5 border border-white/15 backdrop-blur-md text-xs">
+          <div className="relative z-10 mt-3.5 rounded-2xl bg-black/20 p-2.5 sm:px-3.5 sm:py-2.5 border border-white/15 backdrop-blur-md text-xs">
             {isCardMode ? (
-              <>
-                <div className="min-w-0 truncate text-white/90 tabular-nums">
-                  <span>
-                    No Pix ({activePixName.replace(/\s*\(manual\)\)?/gi, '').replace(/\s*\(MODO\)\)?/gi, '').replace('ARQ (DolarApp)', 'ARQ')}):{' '}
+              <div className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex items-center justify-between sm:justify-start gap-1.5 text-white/90 tabular-nums">
+                  <span className="text-[11px] sm:text-xs text-white/80">
+                    No Pix ({cleanPixName}):
                   </span>
-                  <strong className="font-extrabold text-white">
+                  <strong className="font-extrabold text-white text-xs sm:text-[13px]">
                     $ {formatArs(totalPixArs, 0)} ARS
                   </strong>
                 </div>
 
-                <div
-                  className={`shrink-0 inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] sm:text-xs font-extrabold tabular-nums shadow-sm transition animate-pulse ${
-                    cardSaves
-                      ? 'bg-emerald-500/80 text-white border border-emerald-300/40'
-                      : 'bg-rose-500/85 text-white border border-rose-300/50'
-                  }`}
-                >
-                  {cardSaves ? (
-                    <>
-                      Cartão economiza $ {formatArs(diffArsAbs, 0)} (-{formatPct(diffPctArs, 1)})
-                    </>
-                  ) : (
-                    <>
-                      Cartão perde $ {formatArs(diffArsAbs, 0)} (+{formatPct(diffPctArs, 1)})
-                    </>
-                  )}
+                <div className="flex items-center justify-end sm:justify-start">
+                  <span
+                    className={`inline-flex w-full sm:w-auto items-center justify-center gap-1 rounded-full px-2.5 py-1 text-[11px] sm:text-xs font-extrabold tabular-nums shadow-sm transition ${
+                      cardSaves
+                        ? 'bg-emerald-500/85 text-white border border-emerald-300/40'
+                        : 'bg-rose-500/90 text-white border border-rose-300/50'
+                    }`}
+                  >
+                    {cardSaves ? (
+                      <>
+                        <Check className="h-3 w-3 shrink-0" />
+                        <span>Cartão economiza $ {formatArs(diffArsAbs, 0)} (-{formatPct(diffPctArs, 1)})</span>
+                      </>
+                    ) : (
+                      <>
+                        <AlertTriangle className="h-3 w-3 shrink-0" />
+                        <span>Cartão perde $ {formatArs(diffArsAbs, 0)} (+{formatPct(diffPctArs, 1)})</span>
+                      </>
+                    )}
+                  </span>
                 </div>
-              </>
+              </div>
             ) : (
-              <>
-                <div className="min-w-0 truncate text-white/90 tabular-nums">
-                  <span>No cartão ({activeBankName.replace(/\s*\(manual\)\)?/gi, '')}): </span>
-                  <strong className="font-extrabold text-white">
+              <div className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex items-center justify-between sm:justify-start gap-1.5 text-white/90 tabular-nums">
+                  <span className="text-[11px] sm:text-xs text-white/80">
+                    No cartão ({cleanBankName}):
+                  </span>
+                  <strong className="font-extrabold text-white text-xs sm:text-[13px]">
                     $ {formatArs(totalCardArs, 0)} ARS
                   </strong>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={() => switchPaymentModeSmooth('card')}
-                  className={`shrink-0 inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] sm:text-xs font-extrabold tabular-nums shadow-sm transition active:scale-95 animate-pulse ${
-                    pixSaves
-                      ? 'bg-emerald-500/80 text-white border border-emerald-300/40'
-                      : 'bg-rose-500/85 text-white border border-rose-300/50'
-                  }`}
-                >
-                  {pixSaves ? (
-                    <>
-                      Pix economiza $ {formatArs(diffArsAbs, 0)} (-{formatPct(diffPctArs, 1)})
-                    </>
-                  ) : (
-                    <>
-                      Pix perde $ {formatArs(diffArsAbs, 0)} (+{formatPct(diffPctArs, 1)})
-                    </>
-                  )}
-                </button>
-              </>
+                <div className="flex items-center justify-end sm:justify-start">
+                  <button
+                    type="button"
+                    onClick={() => switchPaymentModeSmooth('card')}
+                    className={`inline-flex w-full sm:w-auto items-center justify-center gap-1 rounded-full px-2.5 py-1 text-[11px] sm:text-xs font-extrabold tabular-nums shadow-sm transition active:scale-95 ${
+                      pixSaves
+                        ? 'bg-emerald-500/85 text-white border border-emerald-300/40'
+                        : 'bg-rose-500/90 text-white border border-rose-300/50'
+                    }`}
+                  >
+                    {pixSaves ? (
+                      <>
+                        <Check className="h-3 w-3 shrink-0" />
+                        <span>Pix economiza $ {formatArs(diffArsAbs, 0)} (-{formatPct(diffPctArs, 1)})</span>
+                      </>
+                    ) : (
+                      <>
+                        <AlertTriangle className="h-3 w-3 shrink-0" />
+                        <span>Pix perde $ {formatArs(diffArsAbs, 0)} (+{formatPct(diffPctArs, 1)})</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
             )}
           </div>
 
@@ -669,7 +713,7 @@ export const SmartConverterHero: React.FC<SmartConverterHeroProps> = ({
             aria-controls="card-technical-details"
             className="relative z-10 mt-3 flex w-full items-center justify-between text-[11px] font-semibold text-white/85 hover:text-white transition"
           >
-            <span className="tabular-nums">
+            <span className="tabular-nums truncate text-left mr-1">
               {isCardMode
                 ? isEurInput
                   ? `Conversão Euro: € 1 = US$ 1,1345 (taxa bandeira) • Detalhes`
@@ -950,26 +994,18 @@ export const SmartConverterHero: React.FC<SmartConverterHeroProps> = ({
           </div>
         )}
       </div>
+
+      {/* Modal Moderno: Aviso de exclusividade do Pix em Reais com troca rápida */}
+      <PixCurrencyModal
+        isOpen={showPixCurrencyModal}
+        onClose={() => setShowPixCurrencyModal(false)}
+        currentCurrency={isEurInput ? 'EUR' : 'USD'}
+        onSwitchToBrl={() => {
+          onChangeInputCurrency('BRL');
+          switchPaymentModeSmooth('pix');
+          setShowPixCurrencyModal(false);
+        }}
+      />
     </section>
   );
 };
-
-/**
- * Ícone geométrico limpo no estilo do símbolo do Pix
- */
-const PixDiamondIcon: React.FC<{ className?: string }> = ({ className }) => (
-  <svg
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="2.1"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    className={className}
-    aria-hidden="true"
-  >
-    <path d="M14.8 4.2a2.8 2.8 0 0 0-5.6 0l-5 5a2.8 2.8 0 0 0 0 5.6l5 5a2.8 2.8 0 0 0 5.6 0l5-5a2.8 2.8 0 0 0 0-5.6l-5-5Z" />
-    <path d="M8.5 9.5 12 13l3.5-3.5" />
-    <path d="M8.5 14.5 12 11l3.5 3.5" />
-  </svg>
-);
