@@ -13,6 +13,7 @@ import {
 import {
   calculateDualCardQuotes,
   DEFAULT_CONFIG,
+  EMPIRICAL_EUR_TO_USD_CARD_RATE,
   getDavidSpendingFeedback,
   roundUp2Decimals,
   simulateRealPurchase,
@@ -105,6 +106,7 @@ function loadInitialUserState(initialBundle: LiveMarketBundle): PersistedUserSta
         manualOficialInput: parsed.manualOficialInput || '1553',
         purchaseBrlInput: purchaseBrl,
         usdAmountInput: parsed.usdAmountInput || '20',
+        eurAmountInput: parsed.eurAmountInput || '31,45',
         arsBudgetInput: parsed.arsBudgetInput || '30000',
         converterDirection: parsed.converterDirection || 'BRL_TO_ARS',
         config,
@@ -124,6 +126,7 @@ function loadInitialUserState(initialBundle: LiveMarketBundle): PersistedUserSta
     manualOficialInput: '1553',
     purchaseBrlInput: '100',
     usdAmountInput: '20',
+    eurAmountInput: '31,45',
     arsBudgetInput: '30000',
     converterDirection: 'BRL_TO_ARS',
     config: DEFAULT_CONFIG,
@@ -428,6 +431,11 @@ export const App: React.FC = () => {
     [userState.usdAmountInput]
   );
 
+  const valorEurNumeric = useMemo(
+    () => parseFlexibleDecimal(userState.eurAmountInput || '31,45'),
+    [userState.eurAmountInput]
+  );
+
   const dualQuotes = useMemo(
     () =>
       calculateDualCardQuotes({
@@ -461,21 +469,37 @@ export const App: React.FC = () => {
     if (inputCurrency === 'USD') {
       return valorUsdNumeric * dualQuotes.usdBrlComercialSpot;
     }
+    if (inputCurrency === 'EUR') {
+      return (
+        valorEurNumeric *
+        EMPIRICAL_EUR_TO_USD_CARD_RATE *
+        dualQuotes.usdBrlComercialSpot
+      );
+    }
     return valorBrlNumeric;
-  }, [dualQuotes.usdBrlComercialSpot, inputCurrency, valorBrlNumeric, valorUsdNumeric]);
+  }, [
+    dualQuotes.usdBrlComercialSpot,
+    inputCurrency,
+    valorBrlNumeric,
+    valorEurNumeric,
+    valorUsdNumeric,
+  ]);
 
   const modalDolaresFatura = useMemo(() => {
     if (inputCurrency === 'USD') {
       return roundUp2Decimals(valorUsdNumeric);
     }
+    if (inputCurrency === 'EUR') {
+      return roundUp2Decimals(valorEurNumeric * EMPIRICAL_EUR_TO_USD_CARD_RATE);
+    }
     return simulation.dolaresFatura;
-  }, [inputCurrency, simulation.dolaresFatura, valorUsdNumeric]);
+  }, [inputCurrency, simulation.dolaresFatura, valorEurNumeric, valorUsdNumeric]);
 
   const modalTotalArs = useMemo(() => {
     if (paymentMode === 'pix') {
       return effectiveBrlForAlerts * activePixRate;
     }
-    if (inputCurrency === 'USD') {
+    if (inputCurrency === 'USD' || inputCurrency === 'EUR') {
       return modalDolaresFatura * activeOficialRate;
     }
     return simulation.custoTotalCartaoArs;
@@ -490,7 +514,7 @@ export const App: React.FC = () => {
   ]);
 
   const effectiveSavingsArs = useMemo(() => {
-    if (inputCurrency === 'USD') {
+    if (inputCurrency === 'USD' || inputCurrency === 'EUR') {
       return effectiveBrlForAlerts * activePixRate - modalDolaresFatura * activeOficialRate;
     }
     return simulation.economiaTotalArs;
@@ -585,6 +609,7 @@ export const App: React.FC = () => {
       selectedPixSlug: DEFAULT_CONFIG.defaultPixSlug || 'banco-galicia',
       purchaseBrlInput: '100',
       usdAmountInput: '20',
+      eurAmountInput: '31,45',
       arsBudgetInput: '30000',
       config: {
         ...DEFAULT_CONFIG,
@@ -649,6 +674,26 @@ export const App: React.FC = () => {
     }
   };
 
+  const handleEurAmountChange = (val: string, isInstantPreset = false) => {
+    setUserState((prev) => ({
+      ...prev,
+      eurAmountInput: val,
+    }));
+
+    const numericEur = parseFlexibleDecimal(val);
+    const equivBrl =
+      numericEur * EMPIRICAL_EUR_TO_USD_CARD_RATE * dualQuotes.usdBrlComercialSpot;
+    if (
+      isInstantPreset &&
+      userState.config.davidGuardEnabled &&
+      equivBrl >= HIGH_SPEND_MODAL_THRESHOLD_BRL
+    ) {
+      lastAlertedAmountRef.current = Math.round(equivBrl * 100) / 100;
+      setDavidModalVariant((v) => v + 1);
+      setIsDavidModalOpen(true);
+    }
+  };
+
   return (
     <div className="min-h-dvh flex flex-col">
       <LiveHeader
@@ -683,6 +728,7 @@ export const App: React.FC = () => {
           inputCurrency={inputCurrency}
           purchaseBrlInput={userState.purchaseBrlInput}
           usdAmountInput={userState.usdAmountInput || '20'}
+          eurAmountInput={userState.eurAmountInput || '31,45'}
           arsBudgetInput={userState.arsBudgetInput || '30000'}
           arqRateInput={userState.arqRateInput}
           isArqManual={userState.isArqManual}
@@ -716,6 +762,7 @@ export const App: React.FC = () => {
           }
           onPurchaseBrlChange={handlePurchaseBrlChange}
           onUsdAmountChange={handleUsdAmountChange}
+          onEurAmountChange={handleEurAmountChange}
           onArsBudgetChange={(val) =>
             setUserState((prev) => ({
               ...prev,
@@ -844,15 +891,18 @@ export const App: React.FC = () => {
         onLowerToSafeAmount={() => {
           lastAlertedAmountRef.current = null;
           setIsDavidModalOpen(false);
-          setUserState((prev) =>
-            (prev.inputCurrency || 'BRL') === 'USD'
-              ? { ...prev, usdAmountInput: '20' }
-              : { ...prev, purchaseBrlInput: '100' }
-          );
+          setUserState((prev) => {
+            const curr = prev.inputCurrency || 'BRL';
+            if (curr === 'USD') return { ...prev, usdAmountInput: '20' };
+            if (curr === 'EUR') return { ...prev, eurAmountInput: '20' };
+            return { ...prev, purchaseBrlInput: '100' };
+          });
           showToast(
             inputCurrency === 'USD'
               ? '👏 Aí sim, David! Voltou pros US$ 20 — orgulho de você!'
-              : '👏 Aí sim, David! Voltou pros R$ 100 — orgulho de você!'
+              : inputCurrency === 'EUR'
+                ? '👏 Aí sim, David! Voltou pros € 20 — orgulho de você!'
+                : '👏 Aí sim, David! Voltou pros R$ 100 — orgulho de você!'
           );
         }}
         onNextVariant={() => setDavidModalVariant((v) => v + 1)}

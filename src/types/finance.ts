@@ -84,7 +84,7 @@ export interface CalculatorConfig {
 }
 
 export type PaymentMode = 'card' | 'pix';
-export type InputCurrencyMode = 'BRL' | 'USD' | 'ARS';
+export type InputCurrencyMode = 'BRL' | 'USD' | 'EUR' | 'ARS';
 
 export interface PersistedUserState {
   arqRateInput: string;
@@ -96,6 +96,7 @@ export interface PersistedUserState {
   manualOficialInput: string;
   purchaseBrlInput: string;
   usdAmountInput?: string;
+  eurAmountInput?: string;
   arsBudgetInput?: string;
   converterDirection?: 'BRL_TO_ARS' | 'ARS_TO_BRL';
   config: CalculatorConfig;

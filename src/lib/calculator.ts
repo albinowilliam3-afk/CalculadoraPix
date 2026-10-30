@@ -11,6 +11,12 @@ export const DEFAULT_CONFIG: CalculatorConfig = {
 };
 
 /**
+ * Fator empírico de conversão EUR -> USD na rede internacional do cartão:
+ * Validado pela compra real: € 31,45 lançados pelo banco como US$ 35,68 (taxa efetiva 1,1344992).
+ */
+export const EMPIRICAL_EUR_TO_USD_CARD_RATE = 35.68 / 31.45;
+
+/**
  * Arredonda para cima em 2 casas decimais (como nas faturas reais de cartão em USD:
  * ex: R$ 10,64 / 4,925975 = US$ 2,159978 -> US$ 2,16).
  */
