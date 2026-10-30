@@ -53,6 +53,8 @@ export interface SpotUsdBrlQuote {
   source: 'awesomeapi' | 'er-api' | 'inferred' | 'fallback';
 }
 
+export type SpotUsdArsQuote = SpotUsdBrlQuote;
+
 export interface LiveMarketBundle {
   pixProviders: PixProviderNormalized[];
   arqLiveRate: number | null;
@@ -60,6 +62,7 @@ export interface LiveMarketBundle {
   usdProviders: UsdProviderQuote[];
   oficialBanks: UsdProviderQuote[];
   spotUsdBrl: SpotUsdBrlQuote;
+  spotUsdArs: SpotUsdArsQuote;
   fetchedAt: string;
   pixSource: 'comparapix-direct' | 'comparapix-proxy' | 'comparapix-cors' | 'criptoya' | 'cache';
   usdSource: 'comparadolar' | 'comparadolar-proxy' | 'cache';

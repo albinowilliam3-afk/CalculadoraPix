@@ -245,22 +245,34 @@ export const SmartConverterHero: React.FC<SmartConverterHeroProps> = ({
   );
 
   // Construção das Top 5 melhores cotações para o scroll compacto
-  // 1) Modo Cartão: Top 5 bancos de Dólar Oficial (garantindo Ualá sempre visível na lista)
+  // 1) Modo Cartão: Top 5 bancos de Dólar Oficial (garantindo Ualá e Banco Galicia sempre visíveis na lista)
   const top5CardBanks = React.useMemo(() => {
     const topFive = oficialBanks.slice(0, 5);
     const hasUala = topFive.some((b) => b.slug === 'uala');
     const ualaItem = !hasUala ? oficialBanks.find((b) => b.slug === 'uala') : undefined;
+
+    const hasGalicia = topFive.some((b) => b.slug === 'banco-galicia');
+    const galiciaItem = !hasGalicia ? oficialBanks.find((b) => b.slug === 'banco-galicia') : undefined;
+
     const hasSelected =
       selectedBankSlug !== 'manual' &&
       topFive.some((b) => b.slug === selectedBankSlug);
     const selectedItem =
-      !hasSelected && selectedBankSlug !== 'manual' && selectedBankSlug !== 'uala'
+      !hasSelected &&
+      selectedBankSlug !== 'manual' &&
+      selectedBankSlug !== 'uala' &&
+      selectedBankSlug !== 'banco-galicia'
         ? oficialBanks.find((b) => b.slug === selectedBankSlug)
         : undefined;
 
     const combined = [...topFive];
     if (ualaItem) combined.push(ualaItem);
-    if (selectedItem) combined.push(selectedItem);
+    if (galiciaItem && !combined.some((b) => b.slug === galiciaItem.slug)) {
+      combined.push(galiciaItem);
+    }
+    if (selectedItem && !combined.some((b) => b.slug === selectedItem.slug)) {
+      combined.push(selectedItem);
+    }
     return combined;
   }, [oficialBanks, selectedBankSlug]);
 

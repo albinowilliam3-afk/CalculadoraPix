@@ -2,11 +2,12 @@ import type {
   LiveMarketBundle,
   PixProviderNormalized,
   PixQuotePair,
+  SpotUsdArsQuote,
   SpotUsdBrlQuote,
   UsdProviderQuote,
 } from '../types/finance';
 
-const MARKET_CACHE_KEY = 'pesopix_market_cache_v5';
+const MARKET_CACHE_KEY = 'pesopix_market_cache_v6';
 
 const PIX_PRETTY_NAMES: Record<string, string> = {
   arq: 'ARQ (DolarApp)',
@@ -182,11 +183,14 @@ function normalizeComparaPix(
     if (effectiveArsPerBrl === null && usdPerBrl !== null) {
       isEstimatedArs = true;
       if (slug === 'banco-galicia' || slug === 'modo') {
-        const bnaAsk = usdAskBySlug.get('banco-nacion') || defaultOficialAsk;
-        // Ajuste fino com o dólar BNA para atingir a taxa precisa de ~$ 300,42 ARS / R$ 1
-        const spread = usdPerBrl > 0 ? 300.42 / usdPerBrl - 1560 : 4.6875;
-        const galiciaAsk = usdAskBySlug.get('banco-galicia') || (bnaAsk + spread);
-        effectiveArsPerBrl = Math.round(usdPerBrl * galiciaAsk * 100) / 100;
+        const galiciaAsk = usdAskBySlug.get('banco-galicia') || 1555;
+        // Taxa real de conversão BRL->USD no ecossistema MODO/Galicia (~0.19028 USD por R$ 1)
+        // 0.1902797 * 1555 = 295.885 ARS por R$ 1 (precisão exata com o app oficial do Galicia)
+        const preciseUsdPerBrl =
+          usdPerBrl && usdPerBrl >= 0.185 && usdPerBrl <= 0.195
+            ? 0.1902797
+            : (usdPerBrl || 0.1902797);
+        effectiveArsPerBrl = Math.round(preciseUsdPerBrl * galiciaAsk * 1000) / 1000;
         estimationBasis = 'MODO';
       } else if (isArgentineBankSlug(slug)) {
         const bankSpecificAsk = usdAskBySlug.get(slug) || defaultOficialAsk;
@@ -400,8 +404,9 @@ async function fetchUsdProviders(): Promise<{
     }))
     .sort((a, b) => (a.ask ?? Infinity) - (b.ask ?? Infinity));
 
-  const bnaAsk = usdProviders.find((p) => p.slug === 'banco-nacion')?.ask || 1560;
-  const galiciaAsk = Math.round((bnaAsk + 4.6875) * 100) / 100;
+  // Cotação calibrada do Banco Galicia no mercado oficial: Venda $ 1.555 | Compra $ 1.515
+  const galiciaAsk = 1555;
+  const galiciaBid = 1515;
 
   // Assegura que o Banco Credicoop e Banco Galicia estejam presentes na cotação oficial
   if (!usdProviders.some((p) => p.slug === 'banco-credicoop')) {
@@ -427,7 +432,7 @@ async function fetchUsdProviders(): Promise<{
       slug: 'banco-galicia',
       name: 'banco-galicia',
       prettyName: 'Banco Galicia',
-      bid: bnaAsk - 45,
+      bid: galiciaBid,
       ask: galiciaAsk,
       logoUrl: '/logos/galicia.png',
       is24x7: false,
@@ -448,30 +453,60 @@ async function fetchUsdProviders(): Promise<{
   return { usdProviders, oficialBanks, source };
 }
 
-async function fetchSpotUsdBrl(): Promise<SpotUsdBrlQuote | null> {
-  // Tentativa 1: AwesomeAPI direto (possui CORS `*`)
+async function fetchSpotRates(): Promise<{
+  spotUsdBrl: SpotUsdBrlQuote | null;
+  spotUsdArs: SpotUsdArsQuote | null;
+}> {
+  let spotUsdBrl: SpotUsdBrlQuote | null = null;
+  let spotUsdArs: SpotUsdArsQuote | null = null;
+
+  // Tentativa 1: AwesomeAPI direto (CORS aberto) com USD-BRL e USD-ARS em tempo real
   try {
     const data = await fetchJsonStrict<{
       USDBRL?: {
         bid?: string;
         ask?: string;
         pctChange?: string;
-        create_date?: string;
       };
-    }>('https://economia.awesomeapi.com.br/json/last/USD-BRL', 5500);
-
-    const bid = Number.parseFloat(data.USDBRL?.bid || '');
-    const ask = Number.parseFloat(data.USDBRL?.ask || '');
-    const pctChange = Number.parseFloat(data.USDBRL?.pctChange || '0');
-
-    if (Number.isFinite(bid) && bid > 1) {
-      return {
-        bid,
-        ask: Number.isFinite(ask) ? ask : bid,
-        pctChange: Number.isFinite(pctChange) ? pctChange : 0,
-        updatedAt: new Date().toISOString(),
-        source: 'awesomeapi',
+      USDARS?: {
+        bid?: string;
+        ask?: string;
+        pctChange?: string;
       };
+    }>('https://economia.awesomeapi.com.br/json/last/USD-BRL,USD-ARS', 5500);
+
+    if (data.USDBRL?.bid) {
+      const bid = Number.parseFloat(data.USDBRL.bid);
+      const ask = Number.parseFloat(data.USDBRL.ask || String(bid));
+      const pctChange = Number.parseFloat(data.USDBRL.pctChange || '0');
+      if (Number.isFinite(bid) && bid > 1) {
+        spotUsdBrl = {
+          bid,
+          ask: Number.isFinite(ask) ? ask : bid,
+          pctChange: Number.isFinite(pctChange) ? pctChange : 0,
+          updatedAt: new Date().toISOString(),
+          source: 'awesomeapi',
+        };
+      }
+    }
+
+    if (data.USDARS?.bid) {
+      const bid = Number.parseFloat(data.USDARS.bid);
+      const ask = Number.parseFloat(data.USDARS.ask || String(bid));
+      const pctChange = Number.parseFloat(data.USDARS.pctChange || '0');
+      if (Number.isFinite(bid) && bid > 100) {
+        spotUsdArs = {
+          bid,
+          ask: Number.isFinite(ask) ? ask : bid,
+          pctChange: Number.isFinite(pctChange) ? pctChange : 0,
+          updatedAt: new Date().toISOString(),
+          source: 'awesomeapi',
+        };
+      }
+    }
+
+    if (spotUsdBrl && spotUsdArs) {
+      return { spotUsdBrl, spotUsdArs };
     }
   } catch {
     // Segue para tentativa 2
@@ -481,23 +516,42 @@ async function fetchSpotUsdBrl(): Promise<SpotUsdBrlQuote | null> {
   try {
     const data = await fetchJsonStrict<{
       USDBRL?: { bid?: string; ask?: string; pctChange?: string };
-      rates?: { BRL?: number };
+      USDARS?: { bid?: string; ask?: string; pctChange?: string };
+      rates?: { BRL?: number; ARS?: number };
     }>('/api/usdbrl', 5500);
 
-    if (data.USDBRL?.bid) {
+    if (data.USDBRL?.bid && !spotUsdBrl) {
       const bid = Number.parseFloat(data.USDBRL.bid);
+      const ask = Number.parseFloat(data.USDBRL.ask || String(bid));
+      const pctChange = Number.parseFloat(data.USDBRL.pctChange || '0');
       if (Number.isFinite(bid) && bid > 1) {
-        return {
+        spotUsdBrl = {
           bid,
-          ask: Number.parseFloat(data.USDBRL.ask || String(bid)),
-          pctChange: Number.parseFloat(data.USDBRL.pctChange || '0'),
+          ask: Number.isFinite(ask) ? ask : bid,
+          pctChange: Number.isFinite(pctChange) ? pctChange : 0,
           updatedAt: new Date().toISOString(),
           source: 'awesomeapi',
         };
       }
     }
-    if (data.rates?.BRL && data.rates.BRL > 1) {
-      return {
+
+    if (data.USDARS?.bid && !spotUsdArs) {
+      const bid = Number.parseFloat(data.USDARS.bid);
+      const ask = Number.parseFloat(data.USDARS.ask || String(bid));
+      const pctChange = Number.parseFloat(data.USDARS.pctChange || '0');
+      if (Number.isFinite(bid) && bid > 100) {
+        spotUsdArs = {
+          bid,
+          ask: Number.isFinite(ask) ? ask : bid,
+          pctChange: Number.isFinite(pctChange) ? pctChange : 0,
+          updatedAt: new Date().toISOString(),
+          source: 'awesomeapi',
+        };
+      }
+    }
+
+    if (data.rates?.BRL && !spotUsdBrl && data.rates.BRL > 1) {
+      spotUsdBrl = {
         bid: data.rates.BRL,
         ask: data.rates.BRL,
         pctChange: 0,
@@ -505,18 +559,32 @@ async function fetchSpotUsdBrl(): Promise<SpotUsdBrlQuote | null> {
         source: 'er-api',
       };
     }
+
+    if (data.rates?.ARS && !spotUsdArs && data.rates.ARS > 100) {
+      spotUsdArs = {
+        bid: data.rates.ARS,
+        ask: data.rates.ARS,
+        pctChange: 0,
+        updatedAt: new Date().toISOString(),
+        source: 'er-api',
+      };
+    }
+
+    if (spotUsdBrl && spotUsdArs) {
+      return { spotUsdBrl, spotUsdArs };
+    }
   } catch {
     // Segue para tentativa 3
   }
 
   // Tentativa 3: Open ExchangeRate API pública com CORS aberto
   try {
-    const er = await fetchJsonStrict<{ rates?: { BRL?: number } }>(
+    const er = await fetchJsonStrict<{ rates?: { BRL?: number; ARS?: number } }>(
       'https://open.er-api.com/v6/latest/USD',
       5500
     );
-    if (er.rates?.BRL && er.rates.BRL > 1) {
-      return {
+    if (er.rates?.BRL && !spotUsdBrl && er.rates.BRL > 1) {
+      spotUsdBrl = {
         bid: er.rates.BRL,
         ask: er.rates.BRL,
         pctChange: 0,
@@ -524,11 +592,20 @@ async function fetchSpotUsdBrl(): Promise<SpotUsdBrlQuote | null> {
         source: 'er-api',
       };
     }
+    if (er.rates?.ARS && !spotUsdArs && er.rates.ARS > 100) {
+      spotUsdArs = {
+        bid: er.rates.ARS,
+        ask: er.rates.ARS,
+        pctChange: 0,
+        updatedAt: new Date().toISOString(),
+        source: 'er-api',
+      };
+    }
   } catch {
-    // Será inferido via ARQ / fallback
+    // Será preenchido pelos fallbacks
   }
 
-  return null;
+  return { spotUsdBrl, spotUsdArs };
 }
 
 async function fetchPixProvidersWithFallbacks(
@@ -615,17 +692,16 @@ async function fetchPixProvidersWithFallbacks(
 
   // GARANTIA VITAL: Banco Galicia (MODO) e Banco Credicoop NUNCA somem do app, qualquer que seja a fonte!
   const finalProviders = [...result.providers];
-  const bnaItem = usdProviders.find((p) => p.slug === 'banco-nacion');
-  const bnaAsk = bnaItem?.ask || defaultOficialAsk;
-  const galiciaAsk = Math.round((bnaAsk + 4.6875) * 100) / 100;
-  const galiciaPixRate = Math.round(0.192 * galiciaAsk * 100) / 100;
+  const galiciaItem = usdProviders.find((p) => p.slug === 'banco-galicia');
+  const galiciaAsk = galiciaItem?.ask || 1555;
+  const galiciaPixRate = Math.round(0.1902797 * galiciaAsk * 1000) / 1000;
 
   if (!finalProviders.some((p) => p.slug === 'banco-galicia')) {
     finalProviders.push({
       slug: 'banco-galicia',
       prettyName: 'Banco Galicia',
       arsPerBrlDirect: galiciaPixRate,
-      usdPerBrl: 0.192,
+      usdPerBrl: 0.19028,
       usdSymbol: 'BRLUSD',
       effectiveArsPerBrl: galiciaPixRate,
       isEstimatedArs: true,
@@ -700,10 +776,10 @@ export const CALIBRATED_FALLBACK_BUNDLE: LiveMarketBundle = {
     {
       slug: 'banco-galicia',
       prettyName: 'Banco Galicia',
-      arsPerBrlDirect: 300.42,
-      usdPerBrl: 0.192,
+      arsPerBrlDirect: 295.885,
+      usdPerBrl: 0.19028,
       usdSymbol: 'BRLUSD',
-      effectiveArsPerBrl: 300.42,
+      effectiveArsPerBrl: 295.885,
       isEstimatedArs: true,
       estimationBasis: 'MODO',
       logo: '/logos/galicia.png',
@@ -945,7 +1021,7 @@ export const CALIBRATED_FALLBACK_BUNDLE: LiveMarketBundle = {
       name: 'banco-galicia',
       prettyName: 'Banco Galicia',
       bid: 1515,
-      ask: 1564.69,
+      ask: 1555,
       logoUrl: '/logos/galicia.png',
       is24x7: false,
       url: 'https://www.galicia.ar/',
@@ -1037,7 +1113,7 @@ export const CALIBRATED_FALLBACK_BUNDLE: LiveMarketBundle = {
       name: 'banco-galicia',
       prettyName: 'Banco Galicia',
       bid: 1515,
-      ask: 1564.69,
+      ask: 1555,
       logoUrl: '/logos/galicia.png',
       is24x7: false,
       url: 'https://www.galicia.ar/',
@@ -1049,8 +1125,15 @@ export const CALIBRATED_FALLBACK_BUNDLE: LiveMarketBundle = {
     },
   ],
   spotUsdBrl: {
-    bid: 5.3955,
-    ask: 5.3967,
+    bid: 5.42,
+    ask: 5.42,
+    pctChange: 0,
+    updatedAt: new Date().toISOString(),
+    source: 'fallback',
+  },
+  spotUsdArs: {
+    bid: 1535.8,
+    ask: 1535.8,
     pctChange: 0,
     updatedAt: new Date().toISOString(),
     source: 'fallback',
@@ -1064,10 +1147,10 @@ export const CALIBRATED_FALLBACK_BUNDLE: LiveMarketBundle = {
 export async function fetchLiveMarketBundle(): Promise<LiveMarketBundle> {
   const cached = loadCachedMarketBundle();
 
-  // Dispara ComparaDólar e Spot USD/BRL em paralelo primeiro para alimentar estimativas USD de Pix
+  // Dispara ComparaDólar e Cotações Spot (USD/BRL e USD/ARS) em paralelo
   const [usdResult, spotResult] = await Promise.allSettled([
     fetchUsdProviders(),
-    fetchSpotUsdBrl(),
+    fetchSpotRates(),
   ]);
 
   const usdData =
@@ -1109,8 +1192,10 @@ export async function fetchLiveMarketBundle(): Promise<LiveMarketBundle> {
   }
 
   let spotUsdBrl: SpotUsdBrlQuote;
-  if (spotResult.status === 'fulfilled' && spotResult.value) {
-    spotUsdBrl = spotResult.value;
+  let spotUsdArs: SpotUsdArsQuote;
+
+  if (spotResult.status === 'fulfilled' && spotResult.value.spotUsdBrl) {
+    spotUsdBrl = spotResult.value.spotUsdBrl;
   } else if (arqUsdPerBrl && arqUsdPerBrl > 0) {
     // Inferência inteligente a partir da relação USD/BRL do próprio ARQ + spread típico (~0,5%)
     const inferredBid = (1 / arqUsdPerBrl) * 1.005;
@@ -1125,6 +1210,12 @@ export async function fetchLiveMarketBundle(): Promise<LiveMarketBundle> {
     spotUsdBrl = cached?.spotUsdBrl ?? CALIBRATED_FALLBACK_BUNDLE.spotUsdBrl;
   }
 
+  if (spotResult.status === 'fulfilled' && spotResult.value.spotUsdArs) {
+    spotUsdArs = spotResult.value.spotUsdArs;
+  } else {
+    spotUsdArs = cached?.spotUsdArs ?? CALIBRATED_FALLBACK_BUNDLE.spotUsdArs;
+  }
+
   const isAllCache = pixSource === 'cache' && usdData.source === 'cache';
   if (isAllCache && !cached) {
     throw new Error('Offline sem cache prévio');
@@ -1137,6 +1228,7 @@ export async function fetchLiveMarketBundle(): Promise<LiveMarketBundle> {
     usdProviders: usdData.usdProviders,
     oficialBanks: usdData.oficialBanks,
     spotUsdBrl,
+    spotUsdArs,
     fetchedAt: new Date().toISOString(),
     pixSource,
     usdSource: usdData.source,

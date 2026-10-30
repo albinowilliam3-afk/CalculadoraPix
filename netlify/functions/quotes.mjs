@@ -19,7 +19,7 @@ const SOURCES = {
     maxAge: 15,
   },
   usdbrl: {
-    url: 'https://economia.awesomeapi.com.br/json/last/USD-BRL',
+    url: 'https://economia.awesomeapi.com.br/json/last/USD-BRL,USD-ARS',
     fallbackUrl: 'https://open.er-api.com/v6/latest/USD',
     headers: {
       Accept: 'application/json',

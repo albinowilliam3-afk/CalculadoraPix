@@ -57,7 +57,7 @@ function loadInitialUserState(initialBundle: LiveMarketBundle): PersistedUserSta
   const defaultBank = resolveDefaultBankSlug(initialBundle);
   const galiciaRate =
     initialBundle.pixProviders.find((p) => p.slug === 'banco-galicia')
-      ?.effectiveArsPerBrl ?? 300.42;
+      ?.effectiveArsPerBrl ?? 295.885;
 
   try {
     const raw = localStorage.getItem(USER_STATE_KEY);
@@ -399,7 +399,7 @@ export const App: React.FC = () => {
         activePixRate:
           cotacaoArqNumeric > 0
             ? cotacaoArqNumeric
-            : (foundPix?.effectiveArsPerBrl ?? 300.42),
+            : (foundPix?.effectiveArsPerBrl ?? 295.885),
         activePixName: foundPix ? foundPix.prettyName : 'Pix',
       };
     }
@@ -415,7 +415,7 @@ export const App: React.FC = () => {
     const defaultGalicia = market.pixProviders.find((p) => p.slug === 'banco-galicia');
     return {
       activePixProvider: defaultGalicia || null,
-      activePixRate: defaultGalicia?.effectiveArsPerBrl ?? 300.42,
+      activePixRate: defaultGalicia?.effectiveArsPerBrl ?? 295.885,
       activePixName: defaultGalicia?.prettyName ?? 'Banco Galicia',
     };
   }, [
@@ -710,6 +710,8 @@ export const App: React.FC = () => {
         isStandalone={isStandalone}
         davidGuardEnabled={userState.config.davidGuardEnabled}
         resolvedTheme={resolvedTheme}
+        spotUsdBrl={market.spotUsdBrl}
+        spotUsdArs={market.spotUsdArs}
         onToggleTheme={handleToggleHeaderTheme}
         onRefresh={() => void refreshQuotes(false)}
         onOpenSettings={() => setIsSettingsOpen(true)}
@@ -784,7 +786,7 @@ export const App: React.FC = () => {
             const galiciaProvider =
               market.pixProviders.find((p) => p.slug === 'banco-galicia') ||
               market.pixProviders[0];
-            const liveRate = galiciaProvider?.effectiveArsPerBrl ?? 300.42;
+            const liveRate = galiciaProvider?.effectiveArsPerBrl ?? 295.885;
             if (!liveRate) return;
             setUserState((prev) => ({
               ...prev,
