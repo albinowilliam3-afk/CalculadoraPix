@@ -179,13 +179,14 @@
   box-shadow: 0 0 0 3px rgba(86, 100, 245, 0.14);
 }
 
-/* Iconic Violet-Royal-Blue Virtual Card (inspired by reference banking UI) */
+/* Iconic Violet-Royal-Blue Virtual Card (Credit Card Mode) */
 .neobank-virtual-card {
   position: relative;
   overflow: hidden;
   background: linear-gradient(135deg, #7B5CFA 0%, #5866F5 52%, #3B82F6 100%);
   color: #FFFFFF;
   box-shadow: 0 18px 38px -12px rgba(88, 102, 245, 0.45);
+  transition: box-shadow 0.35s ease;
 }
 
 .neobank-virtual-card::before {
@@ -199,6 +200,73 @@
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.16) 0%, rgba(255, 255, 255, 0.02) 100%);
   transform: rotate(18deg);
   pointer-events: none;
+}
+
+/* Iconic Emerald-Teal Virtual Card (Pix Transfer Mode) */
+.neobank-pix-card {
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(135deg, #10B981 0%, #059669 52%, #0F766E 100%);
+  color: #FFFFFF;
+  box-shadow: 0 18px 38px -12px rgba(5, 150, 105, 0.44);
+  transition: box-shadow 0.35s ease;
+}
+
+.neobank-pix-card::before {
+  content: "";
+  position: absolute;
+  top: -32%;
+  left: -16%;
+  width: 74%;
+  height: 165%;
+  border-radius: 9999px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.17) 0%, rgba(255, 255, 255, 0.02) 100%);
+  transform: rotate(-16deg);
+  pointer-events: none;
+}
+
+.card-mode-swap {
+  translate: 0px 0px;
+  scale: 1;
+  animation: cardModeSwapIn 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes cardModeSwapIn {
+  0% {
+    opacity: 0.72;
+    translate: 0px 6px;
+    scale: 0.985;
+  }
+  100% {
+    opacity: 1;
+    translate: 0px 0px;
+    scale: 1;
+  }
+}
+
+/* Compact Scrollable Top-5 List (`customize-scrollbar-color-and-thickness`) */
+.compact-quotes-scroll {
+  --scrollbar-thumb: rgba(138, 148, 168, 0.45);
+  --scrollbar-track: transparent;
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+  overscroll-behavior: contain;
+}
+
+@supports not (scrollbar-color: auto) {
+  .compact-quotes-scroll::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  .compact-quotes-scroll::-webkit-scrollbar-thumb {
+    background: var(--scrollbar-thumb);
+    border-radius: 9999px;
+  }
+
+  .compact-quotes-scroll::-webkit-scrollbar-track {
+    background: var(--scrollbar-track);
+  }
 }
 
 .neobank-limit-banner {
@@ -425,10 +493,22 @@ dialog.app-alert-modal::backdrop {
   background-color: var(--tab-active-bg);
 }
 
+.active-payment-card-pill {
+  view-transition-name: active-payment-mode;
+  background: linear-gradient(135deg, #7B5CFA 0%, #5664F5 100%);
+}
+
+.active-payment-pix-pill {
+  view-transition-name: active-payment-mode;
+  background: linear-gradient(135deg, #10B981 0%, #059669 100%);
+}
+
 ::view-transition-old(active-ranking-tab),
-::view-transition-new(active-ranking-tab) {
+::view-transition-new(active-ranking-tab),
+::view-transition-old(active-payment-mode),
+::view-transition-new(active-payment-mode) {
   height: 100%;
-  animation-duration: 0.22s;
+  animation-duration: 0.24s;
   animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
@@ -448,7 +528,8 @@ dialog.app-alert-modal::backdrop {
   }
 
   .david-3d-emblem.is-shaking,
-  .david-3d-coin-float {
+  .david-3d-coin-float,
+  .card-mode-swap {
     animation: none !important;
   }
 

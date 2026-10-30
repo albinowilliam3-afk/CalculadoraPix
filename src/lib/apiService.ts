@@ -6,7 +6,7 @@ import type {
   UsdProviderQuote,
 } from '../types/finance';
 
-const MARKET_CACHE_KEY = 'ars2brl_market_cache_v1';
+const MARKET_CACHE_KEY = 'pesopix_market_cache_v2';
 
 const PIX_PRETTY_NAMES: Record<string, string> = {
   arq: 'ARQ (DolarApp)',
@@ -72,6 +72,7 @@ async function fetchJsonStrict<T>(url: string, timeoutMs = 6500): Promise<T> {
 
   try {
     const res = await fetch(url, {
+      cache: 'no-store',
       headers: { Accept: 'application/json' },
       signal: controller.signal,
     });
@@ -681,6 +682,21 @@ export const CALIBRATED_FALLBACK_BUNDLE: LiveMarketBundle = {
   ],
   usdProviders: [
     {
+      slug: 'uala',
+      name: 'uala',
+      prettyName: 'Ualá',
+      bid: 1535,
+      ask: 1553,
+      logoUrl: 'https://api.argentinadatos.com/static/logos/uala.png',
+      is24x7: true,
+      url: 'https://comparadolar.ar',
+      pctVariation: 0,
+      isBank: true,
+      usdType: 'Oficial',
+      lastSeenAt: null,
+      stale: false,
+    },
+    {
       slug: 'brubank-ultra',
       name: 'brubank',
       prettyName: 'Brubank',
@@ -702,21 +718,6 @@ export const CALIBRATED_FALLBACK_BUNDLE: LiveMarketBundle = {
       bid: 1538,
       ask: 1549,
       logoUrl: 'https://api.argentinadatos.com/static/logos/cocos.png',
-      is24x7: true,
-      url: 'https://comparadolar.ar',
-      pctVariation: 0,
-      isBank: true,
-      usdType: 'Oficial',
-      lastSeenAt: null,
-      stale: false,
-    },
-    {
-      slug: 'uala',
-      name: 'uala',
-      prettyName: 'Ualá',
-      bid: 1535,
-      ask: 1553,
-      logoUrl: 'https://api.argentinadatos.com/static/logos/uala.png',
       is24x7: true,
       url: 'https://comparadolar.ar',
       pctVariation: 0,
@@ -758,6 +759,21 @@ export const CALIBRATED_FALLBACK_BUNDLE: LiveMarketBundle = {
   ],
   oficialBanks: [
     {
+      slug: 'uala',
+      name: 'uala',
+      prettyName: 'Ualá',
+      bid: 1535,
+      ask: 1553,
+      logoUrl: 'https://api.argentinadatos.com/static/logos/uala.png',
+      is24x7: true,
+      url: 'https://comparadolar.ar',
+      pctVariation: 0,
+      isBank: true,
+      usdType: 'Oficial',
+      lastSeenAt: null,
+      stale: false,
+    },
+    {
       slug: 'brubank-ultra',
       name: 'brubank',
       prettyName: 'Brubank',
@@ -779,21 +795,6 @@ export const CALIBRATED_FALLBACK_BUNDLE: LiveMarketBundle = {
       bid: 1538,
       ask: 1549,
       logoUrl: 'https://api.argentinadatos.com/static/logos/cocos.png',
-      is24x7: true,
-      url: 'https://comparadolar.ar',
-      pctVariation: 0,
-      isBank: true,
-      usdType: 'Oficial',
-      lastSeenAt: null,
-      stale: false,
-    },
-    {
-      slug: 'uala',
-      name: 'uala',
-      prettyName: 'Ualá',
-      bid: 1535,
-      ask: 1553,
-      logoUrl: 'https://api.argentinadatos.com/static/logos/uala.png',
       is24x7: true,
       url: 'https://comparadolar.ar',
       pctVariation: 0,

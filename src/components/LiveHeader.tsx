@@ -72,14 +72,18 @@ export const LiveHeader: React.FC<LiveHeaderProps> = ({
             onClick={handleLogoTap}
             title="PesoPix • Calculadora Inteligente"
             aria-label="Logo PesoPix Calculadora"
-            className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-[#7654FA] to-[#4A6CF7] text-white shadow-md shadow-indigo-500/25 active:scale-95 transition-transform"
+            className="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl active:scale-95 transition-transform"
           >
-            <span className="text-[13px] font-extrabold tracking-tight leading-none">
-              P$
-            </span>
+            <img
+              src="/app-icon.png"
+              alt=""
+              width={44}
+              height={44}
+              className="h-11 w-11 object-contain drop-shadow-sm"
+            />
             {davidGuardEnabled && (
               <span
-                className="absolute -bottom-0.5 -right-0.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-emerald-500 ring-2 ring-[var(--bg-app)] text-[8px] font-bold text-white"
+                className="absolute -bottom-0.5 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-emerald-500 ring-2 ring-[var(--bg-app)] text-[8px] font-bold text-white"
                 title="De olho nos gastos do David"
               >
                 👀
@@ -107,9 +111,12 @@ export const LiveHeader: React.FC<LiveHeaderProps> = ({
                 </>
               ) : (
                 <>
-                  <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" />
-                  <span className="truncate">
-                    {pixSourceLabel} • {formatRelativeTime(fetchedAt)}
+                  <span className="relative flex h-2 w-2 shrink-0">
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+                    <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
+                  </span>
+                  <span className="truncate" title={pixSourceLabel}>
+                    Ao vivo • {formatRelativeTime(fetchedAt)}
                   </span>
                 </>
               )}

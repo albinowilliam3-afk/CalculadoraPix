@@ -1,12 +1,12 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 import {
   AlertTriangle,
-  ArrowUpDown,
-  CheckCircle2,
-  ChevronRight,
+  Check,
+  ChevronDown,
+  CreditCard,
   Dices,
   Edit3,
-  RotateCcw,
   Sparkles,
 } from 'lucide-react';
 import type {
@@ -14,6 +14,7 @@ import type {
   DualCardQuoteResult,
   PurchaseSimulationResult,
 } from '../lib/calculator';
+import { roundUp2Decimals } from '../lib/calculator';
 import {
   formatArs,
   formatBrl,
@@ -21,32 +22,46 @@ import {
   formatUsd,
   parseFlexibleDecimal,
 } from '../lib/formatters';
-import type { UsdProviderQuote } from '../types/finance';
+import type {
+  InputCurrencyMode,
+  PaymentMode,
+  PixProviderNormalized,
+  UsdProviderQuote,
+} from '../types/finance';
 import { ProviderAvatar } from './ProviderAvatar';
 
 interface SmartConverterHeroProps {
-  direction: 'BRL_TO_ARS' | 'ARS_TO_BRL';
+  paymentMode: PaymentMode;
+  inputCurrency: InputCurrencyMode;
   purchaseBrlInput: string;
+  usdAmountInput: string;
   arsBudgetInput: string;
   arqRateInput: string;
   isArqManual: boolean;
-  arqLiveRate: number | null;
   cotacaoArqNumeric: number;
   oficialBanks: UsdProviderQuote[];
+  pixProviders: PixProviderNormalized[];
   selectedBankSlug: string | 'manual';
+  selectedPixSlug: string;
   manualOficialInput: string;
   activeOficialRate: number;
   activeBankName: string;
+  activePixProvider: PixProviderNormalized | null;
+  activePixRate: number;
+  activePixName: string;
   cardSpreadPct: number;
   quotes: DualCardQuoteResult;
   simulation: PurchaseSimulationResult;
   davidFeedback: DavidSpendingFeedback | null;
-  onToggleDirection: () => void;
+  onChangePaymentMode: (mode: PaymentMode) => void;
+  onChangeInputCurrency: (currency: InputCurrencyMode) => void;
   onPurchaseBrlChange: (val: string, isInstantPreset?: boolean) => void;
+  onUsdAmountChange: (val: string, isInstantPreset?: boolean) => void;
   onArsBudgetChange: (val: string) => void;
   onArqInputChange: (val: string) => void;
   onResetArqToLive: () => void;
   onSelectBank: (slug: string | 'manual') => void;
+  onSelectPixProvider: (slug: string) => void;
   onManualOficialChange: (val: string) => void;
   onCycleInlinePhrase: () => void;
   onOpenHighSpendModal: () => void;
@@ -68,6 +83,14 @@ const BRL_PRESETS: AmountPreset[] = [
   { label: 'R$ 10,64 🎯', value: '10,64', title: 'Compra real de calibração' },
 ];
 
+const USD_PRESETS: AmountPreset[] = [
+  { label: 'US$ 10', value: '10' },
+  { label: 'US$ 20', value: '20' },
+  { label: 'US$ 50', value: '50' },
+  { label: 'US$ 100', value: '100' },
+  { label: 'US$ 200', value: '200' },
+];
+
 const ARS_PRESETS: AmountPreset[] = [
   { label: '$ 10.000', value: '10000' },
   { label: '$ 30.000', value: '30000' },
@@ -86,53 +109,170 @@ function splitFormattedCurrency(formatted: string): { intPart: string; decPart: 
 }
 
 export const SmartConverterHero: React.FC<SmartConverterHeroProps> = ({
-  direction,
+  paymentMode,
+  inputCurrency,
   purchaseBrlInput,
+  usdAmountInput,
   arsBudgetInput,
   arqRateInput,
   isArqManual,
-  arqLiveRate,
-  cotacaoArqNumeric,
   oficialBanks,
+  pixProviders,
   selectedBankSlug,
+  selectedPixSlug,
   manualOficialInput,
   activeOficialRate,
   activeBankName,
+  activePixProvider,
+  activePixRate,
+  activePixName,
   cardSpreadPct,
   quotes,
   simulation,
   davidFeedback,
-  onToggleDirection,
+  onChangePaymentMode,
+  onChangeInputCurrency,
   onPurchaseBrlChange,
+  onUsdAmountChange,
   onArsBudgetChange,
   onArqInputChange,
   onResetArqToLive,
   onSelectBank,
+  onSelectPixProvider,
   onManualOficialChange,
   onCycleInlinePhrase,
   onOpenHighSpendModal,
 }) => {
-  const [showStopDebitTip, setShowStopDebitTip] = useState(false);
+  const [showCardDetails, setShowCardDetails] = useState(false);
+  const [showManualDrawer, setShowManualDrawer] = useState(false);
+  const cardHeadingRef = useRef<HTMLDivElement>(null);
 
-  const isBrlToArs = direction === 'BRL_TO_ARS';
+  const isCardMode = paymentMode === 'card';
+  const isArsInput = inputCurrency === 'ARS';
+  const isUsdInput = inputCurrency === 'USD';
 
-  // Cálculo reverso quando usuário inverte para ARS -> BRL
+  const switchPaymentModeSmooth = (nextMode: PaymentMode) => {
+    if (nextMode === paymentMode) return;
+
+    const docWithVT = document as Document & {
+      startViewTransition?: (cb: () => void) => { finished: Promise<void> };
+    };
+
+    if (!docWithVT.startViewTransition) {
+      onChangePaymentMode(nextMode);
+      requestAnimationFrame(() => {
+        cardHeadingRef.current?.focus({ preventScroll: true });
+      });
+      return;
+    }
+
+    const transition = docWithVT.startViewTransition(() => {
+      flushSync(() => {
+        onChangePaymentMode(nextMode);
+      });
+    });
+
+    transition.finished.finally(() => {
+      cardHeadingRef.current?.focus({ preventScroll: true });
+    });
+  };
+
+  // Cálculos conforme a moeda digitada (BRL, USD ou ARS)
+  const usdNumeric = parseFlexibleDecimal(usdAmountInput);
   const arsNumeric = parseFlexibleDecimal(arsBudgetInput);
-  const reverseBrlCard =
+
+  // Quantidade de dólares na fatura (em modo BRL usa simulação exata; em modo USD usa o valor em USD)
+  const effectiveDolaresFatura = isUsdInput
+    ? roundUp2Decimals(usdNumeric)
+    : simulation.dolaresFatura;
+
+  // Valor equivalente em BRL para calcular o custo nas carteiras Pix
+  const effectiveBrlForPix = isUsdInput
+    ? usdNumeric * quotes.usdBrlComercialSpot
+    : simulation.valorBrl;
+
+  // Totais principais em Pesos (quando comprando em BRL ou USD)
+  const totalCardArs = isUsdInput
+    ? effectiveDolaresFatura * activeOficialRate
+    : simulation.custoTotalCartaoArs;
+
+  const totalPixArs = effectiveBrlForPix * activePixRate;
+
+  // Diferença em Pesos (positivo = Cartão mais barato que Pix)
+  const diffPixMinusCardArs = totalPixArs - totalCardArs;
+  const diffPctCardVsPix =
+    totalPixArs > 0 ? ((totalCardArs - totalPixArs) / totalPixArs) * 100 : 0;
+
+  // Totais reversos em Reais (quando digitando orçamento em Pesos ARS)
+  const reverseBrlOnCard =
     quotes.cardReferenceRate > 0 ? arsNumeric / quotes.cardReferenceRate : 0;
-  const reverseBrlArq = cotacaoArqNumeric > 0 ? arsNumeric / cotacaoArqNumeric : 0;
-  const reverseExtraBrl = reverseBrlCard - reverseBrlArq;
-  const reverseUsdCard = activeOficialRate > 0 ? arsNumeric / activeOficialRate : 0;
+  const reverseBrlOnPix = activePixRate > 0 ? arsNumeric / activePixRate : 0;
+  const reverseUsdOnCard = activeOficialRate > 0 ? arsNumeric / activeOficialRate : 0;
+  const reverseDiffBrl = reverseBrlOnCard - reverseBrlOnPix;
 
-  const formattedCardTotalArs = formatArs(simulation.custoTotalCartaoArs, 2);
-  const { intPart: arsInt, decPart: arsDec } = splitFormattedCurrency(formattedCardTotalArs);
+  // Número principal exibido gigante dentro do cartão (Roxo ou Verde)
+  const primaryDisplayFormatted = isArsInput
+    ? formatBrl(isCardMode ? reverseBrlOnCard : reverseBrlOnPix)
+    : formatArs(isCardMode ? totalCardArs : totalPixArs, 2);
 
-  const formattedReverseBrl = formatBrl(reverseBrlCard);
-  const { intPart: brlInt, decPart: brlDec } = splitFormattedCurrency(formattedReverseBrl);
+  const { intPart: mainInt, decPart: mainDec } = splitFormattedCurrency(
+    primaryDisplayFormatted
+  );
 
-  const isSavingPositive = isBrlToArs
-    ? simulation.economiaTotalArs >= 0
-    : reverseExtraBrl >= 0;
+  // Construção das Top 5 melhores cotações para o scroll compacto
+  // 1) Modo Cartão: Top 5 bancos de Dólar Oficial (garantindo Ualá sempre visível na lista)
+  const top5CardBanks = React.useMemo(() => {
+    const topFive = oficialBanks.slice(0, 5);
+    const hasUala = topFive.some((b) => b.slug === 'uala');
+    const ualaItem = !hasUala ? oficialBanks.find((b) => b.slug === 'uala') : undefined;
+    const hasSelected =
+      selectedBankSlug !== 'manual' &&
+      topFive.some((b) => b.slug === selectedBankSlug);
+    const selectedItem =
+      !hasSelected && selectedBankSlug !== 'manual' && selectedBankSlug !== 'uala'
+        ? oficialBanks.find((b) => b.slug === selectedBankSlug)
+        : undefined;
+
+    const combined = [...topFive];
+    if (ualaItem) combined.push(ualaItem);
+    if (selectedItem) combined.push(selectedItem);
+    return combined;
+  }, [oficialBanks, selectedBankSlug]);
+
+  // 2) Modo Pix: Top 5 carteiras Pix (excluindo bancos CBU tradicionais, garantindo ARQ sempre visível)
+  const top5PixWallets = React.useMemo(() => {
+    const walletsOnly = pixProviders.filter((p) => p.estimationBasis !== 'Oficial CBU');
+    const sourceList = walletsOnly.length > 0 ? walletsOnly : pixProviders;
+    const topFive = sourceList.slice(0, 5);
+
+    const hasArq = topFive.some((p) => p.slug === 'arq');
+    const arqItem = !hasArq ? sourceList.find((p) => p.slug === 'arq') : undefined;
+
+    const hasSelected = topFive.some((p) => p.slug === selectedPixSlug);
+    const selectedItem =
+      !hasSelected && selectedPixSlug !== 'arq'
+        ? sourceList.find((p) => p.slug === selectedPixSlug)
+        : undefined;
+
+    const combined = [...topFive];
+    if (arqItem) combined.push(arqItem);
+    if (selectedItem) combined.push(selectedItem);
+    return combined;
+  }, [pixProviders, selectedPixSlug]);
+
+  const currentInputValue =
+    inputCurrency === 'BRL'
+      ? purchaseBrlInput
+      : inputCurrency === 'USD'
+        ? usdAmountInput
+        : arsBudgetInput;
+
+  const activePresets =
+    inputCurrency === 'BRL'
+      ? BRL_PRESETS
+      : inputCurrency === 'USD'
+        ? USD_PRESETS
+        : ARS_PRESETS;
 
   const davidBannerStyles: Record<DavidSpendingFeedback['level'], string> = {
     benchmark: 'bg-[#5664F5]/10 border-[#5664F5]/25',
@@ -145,40 +285,66 @@ export const SmartConverterHero: React.FC<SmartConverterHeroProps> = ({
   return (
     <section
       id="simulador"
-      aria-label="Conversor Inteligente Reais e Pesos"
+      aria-label="Conversor Inteligente PesoPix"
       className="space-y-4"
     >
-      {/* =====================================================================
-          1. CONVERSOR PRINCIPAL NO TOPO (INTUITIVO ESTILO APP DE BANCO)
-             Digita R$ 100 -> vê na hora quanto paga em Pesos no Cartão!
-          ===================================================================== */}
       <div className="bank-surface rounded-[28px] p-4 sm:p-5">
-        {/* Bloco de Entrada: Valor em Reais (ou Pesos se invertido) */}
+        {/* =================================================================
+            PASSO 1: VALOR E MOEDA (SUPER INTUITIVO PRO DAVID!)
+            ================================================================= */}
         <div>
-          <div className="mb-1.5 flex items-center justify-between gap-2">
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
             <label
               htmlFor="main-amount-input"
-              className="text-xs font-bold text-[var(--text-secondary)]"
+              className="text-xs font-extrabold text-[var(--text-secondary)]"
             >
-              {isBrlToArs
+              {inputCurrency === 'BRL'
                 ? 'Quanto custa em Reais?'
-                : 'Quantos Pesos você quer gastar?'}
+                : inputCurrency === 'USD'
+                  ? 'Quanto custa em Dólar?'
+                  : 'Quantos Pesos você tem?'}
             </label>
 
-            <button
-              type="button"
-              onClick={onToggleDirection}
-              className="bank-subtle inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-bold text-[var(--brand-primary)] transition active:scale-95"
-              title="Inverter sentido da conversão (Reais ⇄ Pesos)"
+            {/* Seletor simples de moeda sem siglas confusas */}
+            <div
+              role="group"
+              aria-label="Escolher moeda digitada"
+              className="bank-subtle inline-flex items-center gap-0.5 rounded-full p-0.5"
             >
-              <ArrowUpDown className="h-3 w-3" />
-              <span>{isBrlToArs ? 'BRL → ARS' : 'ARS → BRL'}</span>
-            </button>
+              {(
+                [
+                  { id: 'BRL', label: 'R$ Reais' },
+                  { id: 'USD', label: 'US$ Dólar' },
+                  { id: 'ARS', label: '$ Pesos' },
+                ] as const
+              ).map((curr) => {
+                const active = inputCurrency === curr.id;
+                return (
+                  <button
+                    key={curr.id}
+                    type="button"
+                    onClick={() => onChangeInputCurrency(curr.id)}
+                    aria-pressed={active}
+                    className={`rounded-full px-2.5 py-1 text-[11px] font-bold transition active:scale-95 ${
+                      active
+                        ? 'bg-[var(--bg-card)] text-[var(--brand-primary)] shadow-sm'
+                        : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'
+                    }`}
+                  >
+                    {curr.label}
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
           <div className="bank-input flex items-center rounded-2xl px-4 py-3 transition">
-            <span className="mr-2 select-none text-xl font-extrabold text-[var(--brand-primary)]">
-              {isBrlToArs ? 'R$' : '$'}
+            <span
+              className={`mr-2 select-none text-xl font-extrabold ${
+                isCardMode ? 'text-[var(--brand-primary)]' : 'text-emerald-600 dark:text-emerald-400'
+              }`}
+            >
+              {inputCurrency === 'BRL' ? 'R$' : inputCurrency === 'USD' ? 'US$' : '$'}
             </span>
             <input
               id="main-amount-input"
@@ -190,39 +356,43 @@ export const SmartConverterHero: React.FC<SmartConverterHeroProps> = ({
               autoCorrect="off"
               autoCapitalize="off"
               spellCheck={false}
-              value={isBrlToArs ? purchaseBrlInput : arsBudgetInput}
-              onChange={(e) =>
-                isBrlToArs
-                  ? onPurchaseBrlChange(e.target.value)
-                  : onArsBudgetChange(e.target.value)
+              value={currentInputValue}
+              onChange={(e) => {
+                const v = e.target.value;
+                if (inputCurrency === 'BRL') onPurchaseBrlChange(v, false);
+                else if (inputCurrency === 'USD') onUsdAmountChange(v, false);
+                else onArsBudgetChange(v);
+              }}
+              placeholder={
+                inputCurrency === 'BRL' ? '100' : inputCurrency === 'USD' ? '20' : '30000'
               }
-              placeholder={isBrlToArs ? '100' : '30000'}
               className="w-full bg-transparent text-3xl sm:text-4xl font-extrabold tracking-tight text-[var(--text-primary)] tabular-nums placeholder:text-[var(--text-muted)] focus:outline-none"
             />
             <span className="bank-subtle ml-2 shrink-0 select-none rounded-xl px-2.5 py-1 text-xs font-extrabold text-[var(--text-primary)]">
-              {isBrlToArs ? 'BRL' : 'ARS'}
+              {inputCurrency}
             </span>
           </div>
 
           {/* Atalhos Rápidos de Valor (1 toque) */}
           <div className="no-scrollbar -mx-1 mt-2.5 flex items-center gap-1.5 overflow-x-auto px-1 pb-0.5">
-            {(isBrlToArs ? BRL_PRESETS : ARS_PRESETS).map((preset) => {
-              const currentRaw = isBrlToArs ? purchaseBrlInput : arsBudgetInput;
+            {activePresets.map((preset) => {
               const isActive =
-                currentRaw.replace('.', ',') === preset.value.replace('.', ',');
+                currentInputValue.replace('.', ',') === preset.value.replace('.', ',');
               return (
                 <button
                   key={preset.value}
                   type="button"
                   title={preset.title}
-                  onClick={() =>
-                    isBrlToArs
-                      ? onPurchaseBrlChange(preset.value, true)
-                      : onArsBudgetChange(preset.value)
-                  }
+                  onClick={() => {
+                    if (inputCurrency === 'BRL') onPurchaseBrlChange(preset.value, true);
+                    else if (inputCurrency === 'USD') onUsdAmountChange(preset.value, true);
+                    else onArsBudgetChange(preset.value);
+                  }}
                   className={`min-h-[36px] shrink-0 rounded-xl px-3 py-1 text-xs font-bold transition active:scale-95 ${
                     isActive
-                      ? 'bg-[#5664F5] text-white shadow-sm'
+                      ? isCardMode
+                        ? 'bg-[#5664F5] text-white shadow-sm'
+                        : 'bg-emerald-600 text-white shadow-sm'
                       : 'bank-subtle text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
                   }`}
                 >
@@ -233,154 +403,584 @@ export const SmartConverterHero: React.FC<SmartConverterHeroProps> = ({
           </div>
         </div>
 
-        {/* ===================================================================
-            CARTÃO VIRTUAL DE RESULTADO IMEDIATO (ESTILO "MY CARDS" DO EXEMPLO)
-            Mostra na hora: R$ 100 -> $ 28.960 ARS no Cartão vs $ 30.691 no ARQ
-            =================================================================== */}
-        <div className="neobank-virtual-card mt-4 rounded-[24px] p-5">
-          {/* Topo do Cartão */}
+        {/* =================================================================
+            PASSO 2: BOTÃO DE TROCA SUAVE — CARTÃO DE CRÉDITO vs PIX
+            ================================================================= */}
+        <div className="mt-4">
+          <div
+            role="tablist"
+            aria-label="Escolher forma de pagamento"
+            className="grid grid-cols-2 rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-input)] p-1"
+          >
+            <button
+              role="tab"
+              type="button"
+              aria-selected={isCardMode}
+              onClick={() => switchPaymentModeSmooth('card')}
+              className="relative flex min-h-[42px] items-center justify-center gap-1.5 rounded-xl px-3 py-2 text-xs font-extrabold transition"
+            >
+              {isCardMode && (
+                <span className="active-payment-card-pill absolute inset-0 rounded-xl shadow-md shadow-indigo-500/25" />
+              )}
+              <CreditCard
+                className={`relative z-10 h-4 w-4 ${
+                  isCardMode ? 'text-white' : 'text-[var(--text-muted)]'
+                }`}
+              />
+              <span
+                className={`relative z-10 ${
+                  isCardMode ? 'text-white' : 'text-[var(--text-secondary)]'
+                }`}
+              >
+                Cartão de Crédito
+              </span>
+            </button>
+
+            <button
+              role="tab"
+              type="button"
+              aria-selected={!isCardMode}
+              onClick={() => switchPaymentModeSmooth('pix')}
+              className="relative flex min-h-[42px] items-center justify-center gap-1.5 rounded-xl px-3 py-2 text-xs font-extrabold transition"
+            >
+              {!isCardMode && (
+                <span className="active-payment-pix-pill absolute inset-0 rounded-xl shadow-md shadow-emerald-500/25" />
+              )}
+              <PixDiamondIcon
+                className={`relative z-10 h-4 w-4 ${
+                  !isCardMode ? 'text-white' : 'text-[var(--text-muted)]'
+                }`}
+              />
+              <span
+                className={`relative z-10 ${
+                  !isCardMode ? 'text-white' : 'text-[var(--text-secondary)]'
+                }`}
+              >
+                Transferência Pix
+              </span>
+            </button>
+          </div>
+        </div>
+
+        {/* =================================================================
+            CARTÃO VIRTUAL DINÂMICO:
+            - ROXO no modo Cartão de Crédito: "No cartão de crédito - (dólar Ualá)"
+            - VERDE no modo Transferência Pix: "Transferência Pix - ARQ (DolarApp)"
+            ================================================================= */}
+        <div
+          key={paymentMode}
+          ref={cardHeadingRef}
+          tabIndex={-1}
+          className={`card-mode-swap mt-3.5 rounded-[24px] p-5 focus:outline-none ${
+            isCardMode ? 'neobank-virtual-card' : 'neobank-pix-card'
+          }`}
+        >
+          {/* Cabeçalho do Cartão / Pix */}
           <div className="relative z-10 flex items-center justify-between gap-2">
             <div className="flex items-center gap-2 min-w-0">
-              <span className="tracking-[0.2em] text-xs font-bold text-white/75">
-                ••••
-              </span>
-              <span className="truncate text-xs font-bold text-white/95">
-                {isBrlToArs
-                  ? `No Cartão (${activeBankName})`
-                  : `Poder de compra no Cartão`}
+              {isCardMode ? (
+                <span className="tracking-[0.18em] text-xs font-bold text-white/75 shrink-0">
+                  ••••
+                </span>
+              ) : (
+                <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-white/20">
+                  {activePixProvider ? (
+                    <ProviderAvatar
+                      src={activePixProvider.logo}
+                      name={activePixName}
+                      sizeClass="h-4 w-4"
+                    />
+                  ) : (
+                    <PixDiamondIcon className="h-3.5 w-3.5 text-white" />
+                  )}
+                </span>
+              )}
+
+              <span className="truncate text-xs sm:text-[13px] font-extrabold text-white">
+                {isCardMode
+                  ? `No cartão de crédito - (dólar ${activeBankName})`
+                  : `Transferência Pix - ${activePixName}`}
               </span>
             </div>
 
-            <div className="flex items-center shrink-0" aria-hidden="true">
-              <span className="h-5 w-5 rounded-full bg-white/80" />
-              <span className="-ml-2 h-5 w-5 rounded-full bg-white/45" />
-            </div>
+            {isCardMode ? (
+              <div className="flex items-center shrink-0" aria-hidden="true">
+                <span className="h-5 w-5 rounded-full bg-white/80" />
+                <span className="-ml-2 h-5 w-5 rounded-full bg-white/45" />
+              </div>
+            ) : (
+              <span className="inline-flex items-center gap-1 rounded-full bg-white/20 px-2.5 py-0.5 text-[10px] font-extrabold uppercase tracking-wider text-white shrink-0">
+                <PixDiamondIcon className="h-3 w-3 text-white" />
+                Pix
+              </span>
+            )}
           </div>
 
-          {/* VALOR TOTAL GIGANTE EM PESOS (OU REAIS SE INVERTIDO) */}
+          {/* VALOR PRINCIPAL GIGANTE EM PESOS (OU REAIS SE DIGITOU PESOS) */}
           <div className="relative z-10 mt-3.5">
-            <div className="text-[11px] font-semibold uppercase tracking-wider text-white/75">
-              {isBrlToArs ? 'Você vai pagar em Pesos' : 'Você consegue gastar no Brasil'}
+            <div className="text-[11px] font-semibold uppercase tracking-wider text-white/80">
+              {isArsInput
+                ? 'Você consegue gastar no Brasil'
+                : 'Você vai pagar em Pesos'}
             </div>
 
             <div className="mt-1 flex flex-wrap items-baseline justify-between gap-2">
               <div className="flex items-baseline tabular-nums">
                 <span className="mr-1.5 text-xl sm:text-2xl font-bold text-white/85">
-                  {isBrlToArs ? '$' : 'R$'}
+                  {isArsInput ? 'R$' : '$'}
                 </span>
                 <span className="text-4xl sm:text-[42px] font-extrabold leading-none tracking-tight text-white">
-                  {isBrlToArs ? arsInt : brlInt}
+                  {mainInt}
                 </span>
-                <span className="text-lg sm:text-xl font-bold text-white/75">
-                  {isBrlToArs ? arsDec : brlDec}
+                <span className="text-lg sm:text-xl font-bold text-white/80">
+                  {mainDec}
                 </span>
-                <span className="ml-2 text-xs font-bold uppercase text-white/75">
-                  {isBrlToArs ? 'ARS' : 'BRL'}
+                <span className="ml-2 text-xs font-bold uppercase text-white/80">
+                  {isArsInput ? 'BRL' : 'ARS'}
                 </span>
               </div>
 
-              {/* Fatura em Dólares */}
+              {/* Pill secundária clara (Fatura USD no Cartão ou Cotação por R$ 1 no Pix) */}
               <span className="rounded-xl bg-white/18 px-2.5 py-1 text-xs font-extrabold text-white backdrop-blur-sm tabular-nums">
-                Fatura: US${' '}
-                {formatUsd(isBrlToArs ? simulation.dolaresFatura : reverseUsdCard)}
+                {isCardMode
+                  ? `Fatura: US$ ${formatUsd(
+                      isArsInput ? reverseUsdOnCard : effectiveDolaresFatura
+                    )}`
+                  : `$ ${formatArs(activePixRate)} / R$ 1`}
               </span>
             </div>
           </div>
 
-          {/* Comparação Direta: Cartão vs ARQ/Pix + Economia */}
+          {/* Barra Comparativa Direta em Linguagem Simples (Cartão vs Pix) */}
           <div className="relative z-10 mt-4 flex flex-wrap items-center justify-between gap-2 rounded-2xl bg-black/18 px-3.5 py-2.5 border border-white/15 backdrop-blur-md text-xs">
-            <div className="text-white/85 tabular-nums">
-              <span>No ARQ / Pix: </span>
-              <strong className="font-extrabold text-white">
-                {isBrlToArs
-                  ? `$ ${formatArs(simulation.custoTotalArqArs, 0)} ARS`
-                  : `R$ ${formatBrl(reverseBrlArq)}`}
-              </strong>
-            </div>
+            {isCardMode ? (
+              <>
+                <div className="text-white/90 tabular-nums">
+                  <span>
+                    No Pix ({activePixName.replace('ARQ (DolarApp)', 'ARQ / DolarApp')}):{' '}
+                  </span>
+                  <strong className="font-extrabold text-white">
+                    {isArsInput
+                      ? `R$ ${formatBrl(reverseBrlOnPix)}`
+                      : `$ ${formatArs(totalPixArs, 0)} ARS`}
+                  </strong>
+                </div>
 
-            <div className="inline-flex items-center gap-1.5 rounded-full bg-emerald-400/25 px-2.5 py-0.5 font-extrabold text-emerald-100 tabular-nums">
-              {isBrlToArs ? (
-                isSavingPositive ? (
-                  <>
-                    Economiza $ {formatArs(Math.abs(simulation.economiaTotalArs), 0)} (
-                    {formatPct(simulation.descontoEfetivoPct, 1)})
-                  </>
-                ) : (
-                  <>ARQ ganha por $ {formatArs(Math.abs(simulation.economiaTotalArs), 0)}</>
-                )
-              ) : isSavingPositive ? (
-                <>+ R$ {formatBrl(Math.abs(reverseExtraBrl))} extras</>
-              ) : (
-                <>- R$ {formatBrl(Math.abs(reverseExtraBrl))}</>
-              )}
-            </div>
+                <div className="inline-flex items-center gap-1 rounded-full bg-emerald-400/28 px-2.5 py-0.5 font-extrabold text-white tabular-nums">
+                  {isArsInput ? (
+                    reverseDiffBrl >= 0 ? (
+                      <>+ R$ {formatBrl(Math.abs(reverseDiffBrl))} a mais ✅</>
+                    ) : (
+                      <>Pix rende + R$ {formatBrl(Math.abs(reverseDiffBrl))}</>
+                    )
+                  ) : diffPixMinusCardArs >= 0 ? (
+                    <>
+                      Economiza $ {formatArs(Math.abs(diffPixMinusCardArs), 0)} (
+                      {formatPct(diffPctCardVsPix, 1)})
+                    </>
+                  ) : (
+                    <>Pix ganha por $ {formatArs(Math.abs(diffPixMinusCardArs), 0)}</>
+                  )}
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="text-white/90 tabular-nums">
+                  <span>No cartão (dólar {activeBankName}): </span>
+                  <strong className="font-extrabold text-white">
+                    {isArsInput
+                      ? `R$ ${formatBrl(reverseBrlOnCard)}`
+                      : `$ ${formatArs(totalCardArs, 0)} ARS`}
+                  </strong>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => switchPaymentModeSmooth('card')}
+                  className="inline-flex items-center gap-1 rounded-full bg-white/22 hover:bg-white/30 px-2.5 py-0.5 font-extrabold text-white tabular-nums transition active:scale-95"
+                >
+                  {isArsInput ? (
+                    reverseDiffBrl > 0 ? (
+                      <>Cartão dá + R$ {formatBrl(Math.abs(reverseDiffBrl))} 💡</>
+                    ) : (
+                      <>Pix rende mais ✅</>
+                    )
+                  ) : diffPixMinusCardArs > 0 ? (
+                    <>Cartão economiza $ {formatArs(Math.abs(diffPixMinusCardArs), 0)} 💡</>
+                  ) : (
+                    <>Mais barato que o cartão ✅</>
+                  )}
+                </button>
+              </>
+            )}
           </div>
 
-          {/* Rodapé Compacto: As Duas Fórmulas por R$ 1,00 */}
-          <div className="relative z-10 mt-3 grid grid-cols-2 gap-2.5">
-            <div className="rounded-xl bg-white/12 px-3 py-2 border border-white/15">
-              <div className="flex items-center justify-between text-[10px] font-semibold text-white/80">
-                <span>Cotação Spot + Oficial</span>
-                <span className="font-bold text-emerald-200 tabular-nums">
-                  {formatPct(quotes.metodoBDescontoPct, 1)}
-                </span>
-              </div>
-              <div className="mt-0.5 text-sm font-extrabold text-white tabular-nums">
-                $ {formatArs(quotes.metodoBCotacaoContinua)}{' '}
-                <span className="text-[10px] font-medium text-white/70">/ R$ 1</span>
-              </div>
-            </div>
-
-            <div className="rounded-xl bg-white/12 px-3 py-2 border border-white/15">
-              <div className="flex items-center justify-between text-[10px] font-semibold text-white/80">
-                <span>Fórmula -5,35%</span>
-                <span className="font-bold text-white/90 tabular-nums">
-                  {formatPct(quotes.metodoADescontoPct, 1)}
-                </span>
-              </div>
-              <div className="mt-0.5 text-sm font-extrabold text-white tabular-nums">
-                $ {formatArs(quotes.metodoACotacaoEstimada)}{' '}
-                <span className="text-[10px] font-medium text-white/70">/ R$ 1</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Botão Como Pagar Sem Imposto (Stop Debit) */}
+          {/* Detalhes técnicos recolhíveis para não confundir o David */}
           <button
             type="button"
-            onClick={() => setShowStopDebitTip((prev) => !prev)}
-            aria-expanded={showStopDebitTip}
-            aria-controls="stop-debit-tip"
+            onClick={() => setShowCardDetails((prev) => !prev)}
+            aria-expanded={showCardDetails}
+            aria-controls="card-technical-details"
             className="relative z-10 mt-3 flex w-full items-center justify-between text-[11px] font-semibold text-white/85 hover:text-white transition"
           >
-            <span>
-              US$ 1 = R$ {formatBrl(quotes.usdBrlComercialSpot)} (-
-              {formatPct(cardSpreadPct, 2)}) • Como zerar os 30% ARCA?
+            <span className="tabular-nums">
+              {isCardMode
+                ? `Cotação efetiva: $ ${formatArs(quotes.metodoBCotacaoContinua)} por R$ 1 • Como pagar sem imposto?`
+                : `US$ 1 Comercial = R$ ${formatBrl(quotes.usdBrlComercialSpot)} • Ver detalhes`}
             </span>
-            <ChevronRight
+            <ChevronDown
               className={`h-4 w-4 shrink-0 transition-transform ${
-                showStopDebitTip ? 'rotate-90' : ''
+                showCardDetails ? 'rotate-180' : ''
               }`}
             />
           </button>
 
-          {showStopDebitTip && (
+          {showCardDetails && (
             <div
-              id="stop-debit-tip"
-              className="relative z-10 mt-2 rounded-2xl bg-black/25 p-3 text-[11px] leading-relaxed text-white/95 border border-white/15"
+              id="card-technical-details"
+              className="relative z-10 mt-2.5 space-y-2 rounded-2xl bg-black/22 p-3 text-[11px] leading-relaxed text-white/95 border border-white/15"
             >
-              Passe o cartão sempre em <strong>BRL</strong>. No fechamento da fatura, faça{' '}
-              <em>Stop Debit</em> e pague o saldo em dólares usando os{' '}
-              <strong>USD comprados no Oficial</strong> (ou configure o débito direto na{' '}
-              <em>Caja de Ahorro en USD</em>).
+              {isCardMode ? (
+                <>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="rounded-xl bg-white/10 px-2.5 py-1.5">
+                      <div className="text-[10px] text-white/75">Spot + Oficial</div>
+                      <div className="font-extrabold tabular-nums">
+                        $ {formatArs(quotes.metodoBCotacaoContinua)} / R$ 1
+                      </div>
+                    </div>
+                    <div className="rounded-xl bg-white/10 px-2.5 py-1.5">
+                      <div className="text-[10px] text-white/75">Fórmula -5,35%</div>
+                      <div className="font-extrabold tabular-nums">
+                        $ {formatArs(quotes.metodoACotacaoEstimada)} / R$ 1
+                      </div>
+                    </div>
+                  </div>
+                  <p>
+                    💡 <strong>Dica pro David:</strong> passe o cartão na maquininha em{' '}
+                    <strong>Reais (BRL)</strong> e pague a fatura usando os{' '}
+                    <strong>dólares comprados no {activeBankName}</strong> (com{' '}
+                    <em>Stop Debit</em>) para zerar os 30% de imposto (`-{formatPct(cardSpreadPct, 2)}` spread).
+                  </p>
+                </>
+              ) : (
+                <p>
+                  ⚡ No <strong>Pix via {activePixName}</strong>, o valor em Pesos sai na
+                  hora da sua conta sem precisar pagar fatura depois. Cotação atual:{' '}
+                  <strong>$ {formatArs(activePixRate)} ARS</strong> por cada{' '}
+                  <strong>R$ 1,00</strong>.
+                </p>
+              )}
             </div>
           )}
         </div>
 
-        {/* Feedback sutil do Modo David quando aplicável */}
-        {isBrlToArs && davidFeedback && (
+        {/* =================================================================
+            TOP 5 MELHORES COTAÇÕES (EM SCROLL COMPACTO PARA NÃO QUEBRAR PÁGINA!)
+            - Em Cartão: mostra valor em Pesos nos Top 5 bancos (Ualá padrão)
+            - Em Pix: mostra valor em Pesos nas Top 5 carteiras Pix (ARQ padrão)
+            ================================================================= */}
+        <div className="mt-4 pt-3.5 border-t border-[var(--border-subtle)]">
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <div>
+              <h3 className="text-xs font-extrabold text-[var(--text-primary)]">
+                {isCardMode
+                  ? 'Top 5 melhores cotações • Dólar do Cartão'
+                  : 'Top 5 melhores cotações • Transferência Pix'}
+              </h3>
+              <p className="text-[11px] text-[var(--text-muted)]">
+                Toque para trocar • role para comparar o valor em {isArsInput ? 'Reais' : 'Pesos'}
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setShowManualDrawer((v) => !v)}
+              aria-expanded={showManualDrawer}
+              aria-controls="manual-rate-drawer"
+              className="bank-subtle shrink-0 inline-flex items-center gap-1 rounded-xl px-2.5 py-1.5 text-[11px] font-bold text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition"
+            >
+              <Edit3 className="h-3 w-3" />
+              <span>Manual</span>
+            </button>
+          </div>
+
+          {/* LISTA COM SCROLL COMPACTO (NÃO ESTICA NEM QUEBRA A PÁGINA!) */}
           <div
-            className={`mt-3 rounded-2xl border px-3.5 py-2.5 transition-all ${davidBannerStyles[davidFeedback.level]}`}
+            role="listbox"
+            aria-label={
+              isCardMode
+                ? 'Melhores bancos de Dólar Oficial'
+                : 'Melhores carteiras de Transferência Pix'
+            }
+            className="compact-quotes-scroll max-h-[196px] space-y-1.5 overflow-y-auto pr-1"
+          >
+            {isCardMode
+              ? top5CardBanks.map((bank) => {
+                  const bankAsk = bank.ask || 0;
+                  const isSelected = selectedBankSlug === bank.slug;
+                  const isUala = bank.slug === 'uala';
+                  const rankInAll =
+                    oficialBanks.findIndex((b) => b.slug === bank.slug) + 1;
+
+                  const rowTotalArs = effectiveDolaresFatura * bankAsk;
+                  const rowReverseBrl =
+                    quotes.usdBrlBandeira > 0 && bankAsk > 0
+                      ? (arsNumeric / bankAsk) * quotes.usdBrlBandeira
+                      : 0;
+
+                  return (
+                    <button
+                      key={bank.slug}
+                      type="button"
+                      role="option"
+                      aria-selected={isSelected}
+                      onClick={() => onSelectBank(bank.slug)}
+                      className={`flex w-full items-center justify-between gap-2.5 rounded-2xl border px-3 py-2 text-left transition active:scale-[0.99] ${
+                        isSelected
+                          ? 'bg-[#5664F5]/[0.10] border-[#5664F5]/45'
+                          : 'bank-subtle border-transparent hover:opacity-95'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[var(--bg-card)] text-[10px] font-extrabold text-[var(--text-muted)] tabular-nums">
+                          #{rankInAll > 0 ? rankInAll : '•'}
+                        </span>
+
+                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[var(--bg-card)]">
+                          <ProviderAvatar
+                            src={bank.logoUrl}
+                            name={bank.prettyName}
+                            sizeClass="h-5 w-5"
+                          />
+                        </div>
+
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="truncate text-xs font-extrabold text-[var(--text-primary)]">
+                              dólar {bank.prettyName}
+                            </span>
+                            {isUala && (
+                              <span className="rounded bg-[#5664F5]/15 px-1.5 py-0.5 text-[9px] font-extrabold text-[var(--brand-primary)]">
+                                PADRÃO
+                              </span>
+                            )}
+                            {rankInAll === 1 && (
+                              <span
+                                style={{
+                                  backgroundColor: 'var(--positive-bg)',
+                                  color: 'var(--positive-text)',
+                                }}
+                                className="rounded px-1.5 py-0.5 text-[9px] font-extrabold"
+                              >
+                                MELHOR
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-[10px] font-semibold text-[var(--text-muted)] tabular-nums">
+                            Dólar Oficial: ${formatArs(bankAsk, 0)}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 shrink-0">
+                        <div className="text-right tabular-nums">
+                          <div className="text-xs sm:text-sm font-extrabold text-[var(--text-primary)]">
+                            {isArsInput
+                              ? `R$ ${formatBrl(rowReverseBrl)}`
+                              : `$ ${formatArs(rowTotalArs, 0)} ARS`}
+                          </div>
+                          <div className="text-[10px] font-bold text-[var(--brand-primary)]">
+                            {isSelected ? 'Em uso' : 'Usar'}
+                          </div>
+                        </div>
+
+                        {isSelected && (
+                          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[#5664F5] text-white">
+                            <Check className="h-3 w-3 stroke-[3]" />
+                          </span>
+                        )}
+                      </div>
+                    </button>
+                  );
+                })
+              : top5PixWallets.map((wallet) => {
+                  const wRate = wallet.effectiveArsPerBrl || 0;
+                  const isSelected = !isArqManual && selectedPixSlug === wallet.slug;
+                  const isArq = wallet.slug === 'arq';
+                  const walletsOnly = pixProviders.filter(
+                    (p) => p.estimationBasis !== 'Oficial CBU'
+                  );
+                  const rankInPix =
+                    (walletsOnly.length > 0 ? walletsOnly : pixProviders).findIndex(
+                      (p) => p.slug === wallet.slug
+                    ) + 1;
+
+                  const rowTotalArs = effectiveBrlForPix * wRate;
+                  const rowReverseBrl = wRate > 0 ? arsNumeric / wRate : 0;
+
+                  return (
+                    <button
+                      key={wallet.slug}
+                      type="button"
+                      role="option"
+                      aria-selected={isSelected}
+                      onClick={() => onSelectPixProvider(wallet.slug)}
+                      className={`flex w-full items-center justify-between gap-2.5 rounded-2xl border px-3 py-2 text-left transition active:scale-[0.99] ${
+                        isSelected
+                          ? 'bg-emerald-500/[0.11] border-emerald-500/45'
+                          : 'bank-subtle border-transparent hover:opacity-95'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[var(--bg-card)] text-[10px] font-extrabold text-[var(--text-muted)] tabular-nums">
+                          #{rankInPix > 0 ? rankInPix : '•'}
+                        </span>
+
+                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[var(--bg-card)]">
+                          <ProviderAvatar
+                            src={wallet.logo}
+                            name={wallet.prettyName}
+                            sizeClass="h-5 w-5"
+                          />
+                        </div>
+
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="truncate text-xs font-extrabold text-[var(--text-primary)]">
+                              {wallet.prettyName}
+                            </span>
+                            {isArq && (
+                              <span className="rounded bg-emerald-500/15 px-1.5 py-0.5 text-[9px] font-extrabold text-emerald-600 dark:text-emerald-400">
+                                PADRÃO
+                              </span>
+                            )}
+                            {rankInPix === 1 && (
+                              <span
+                                style={{
+                                  backgroundColor: 'var(--positive-bg)',
+                                  color: 'var(--positive-text)',
+                                }}
+                                className="rounded px-1.5 py-0.5 text-[9px] font-extrabold"
+                              >
+                                MELHOR
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-[10px] font-semibold text-[var(--text-muted)] tabular-nums">
+                            Cotação: ${formatArs(wRate)} / R$ 1
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 shrink-0">
+                        <div className="text-right tabular-nums">
+                          <div className="text-xs sm:text-sm font-extrabold text-[var(--text-primary)]">
+                            {isArsInput
+                              ? `R$ ${formatBrl(rowReverseBrl)}`
+                              : `$ ${formatArs(rowTotalArs, 0)} ARS`}
+                          </div>
+                          <div className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400">
+                            {isSelected ? 'Em uso' : 'Usar'}
+                          </div>
+                        </div>
+
+                        {isSelected && (
+                          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-emerald-600 text-white">
+                            <Check className="h-3 w-3 stroke-[3]" />
+                          </span>
+                        )}
+                      </div>
+                    </button>
+                  );
+                })}
+          </div>
+
+          {/* Gaveta opcional caso queira digitar cotação manual */}
+          {showManualDrawer && (
+            <div
+              id="manual-rate-drawer"
+              className="bank-subtle mt-3 space-y-3 rounded-2xl p-3.5"
+            >
+              {isCardMode ? (
+                <div>
+                  <label
+                    htmlFor="manual-oficial-input"
+                    className="mb-1 block text-xs font-bold text-[var(--text-primary)]"
+                  >
+                    Digitar Dólar Oficial manual (ARS por US$ 1)
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      id="manual-oficial-input"
+                      name="manualOficial"
+                      type="text"
+                      inputMode="decimal"
+                      enterKeyHint="done"
+                      autoComplete="off"
+                      autoCorrect="off"
+                      autoCapitalize="off"
+                      spellCheck={false}
+                      value={manualOficialInput}
+                      onChange={(e) => onManualOficialChange(e.target.value)}
+                      placeholder="1553"
+                      className="bank-input w-full rounded-xl px-3 py-2 text-sm font-bold text-[var(--text-primary)] tabular-nums focus:outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => onSelectBank('uala')}
+                      className="bank-surface shrink-0 rounded-xl px-3 py-2 text-xs font-bold text-[var(--brand-primary)] active:scale-95"
+                    >
+                      Usar Ualá
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  <label
+                    htmlFor="arq-rate-input"
+                    className="mb-1 block text-xs font-bold text-[var(--text-primary)]"
+                  >
+                    Digitar cotação Pix manual (ARS por R$ 1)
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      id="arq-rate-input"
+                      name="arqRate"
+                      type="text"
+                      inputMode="decimal"
+                      enterKeyHint="done"
+                      autoComplete="off"
+                      autoCorrect="off"
+                      autoCapitalize="off"
+                      spellCheck={false}
+                      value={arqRateInput}
+                      onChange={(e) => onArqInputChange(e.target.value)}
+                      placeholder="307,00"
+                      className="bank-input w-full rounded-xl px-3 py-2 text-sm font-bold text-[var(--text-primary)] tabular-nums focus:outline-none"
+                    />
+                    {isArqManual && (
+                      <button
+                        type="button"
+                        onClick={onResetArqToLive}
+                        className="bank-surface shrink-0 rounded-xl px-3 py-2 text-xs font-bold text-emerald-600 dark:text-emerald-400 active:scale-95"
+                      >
+                        Auto ARQ
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* =================================================================
+            RECADOS BEM-HUMORADOS DIRETO PRO DAVID
+            ================================================================= */}
+        {!isArsInput && davidFeedback && (
+          <div
+            className={`mt-3.5 rounded-2xl border px-3.5 py-2.5 transition-all ${davidBannerStyles[davidFeedback.level]}`}
           >
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0">
@@ -392,7 +992,7 @@ export const SmartConverterHero: React.FC<SmartConverterHeroProps> = ({
                 </p>
               </div>
 
-              {simulation.valorBrl >= 400 ? (
+              {effectiveBrlForPix >= 400 ? (
                 <button
                   type="button"
                   onClick={onOpenHighSpendModal}
@@ -418,185 +1018,26 @@ export const SmartConverterHero: React.FC<SmartConverterHeroProps> = ({
           </div>
         )}
       </div>
-
-      {/* =====================================================================
-          2. BASES DE COTAÇÃO (ARQ / DOLARAPP + BANCOS DE DÓLAR OFICIAL)
-             Pré-preenchidas via API, editáveis com 1 toque
-          ===================================================================== */}
-      <div className="bank-surface rounded-[28px] p-4 sm:p-5">
-        <div className="flex items-center justify-between gap-2">
-          <label
-            htmlFor="arq-rate-input"
-            className="text-xs font-bold text-[var(--text-primary)]"
-          >
-            Cotação Base no ARQ / DolarApp
-          </label>
-
-          {isArqManual && arqLiveRate ? (
-            <button
-              type="button"
-              onClick={onResetArqToLive}
-              className="inline-flex items-center gap-1 rounded-full bg-[#5664F5]/12 px-2.5 py-0.5 text-[11px] font-bold text-[var(--brand-primary)] active:scale-95 transition"
-            >
-              <RotateCcw className="h-3 w-3" />
-              Auto ${formatArs(arqLiveRate)}
-            </button>
-          ) : (
-            <span
-              style={{
-                backgroundColor: 'var(--positive-bg)',
-                color: 'var(--positive-text)',
-              }}
-              className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-bold"
-            >
-              <CheckCircle2 className="h-3 w-3" />
-              Automático
-            </span>
-          )}
-        </div>
-
-        <div className="bank-input mt-2 flex items-center rounded-2xl px-3.5 py-2 transition">
-          <span className="mr-1.5 select-none text-base font-bold text-[var(--text-muted)]">
-            $
-          </span>
-          <input
-            id="arq-rate-input"
-            name="arqRate"
-            type="text"
-            inputMode="decimal"
-            enterKeyHint="done"
-            autoComplete="off"
-            autoCorrect="off"
-            autoCapitalize="off"
-            spellCheck={false}
-            value={arqRateInput}
-            onChange={(e) => onArqInputChange(e.target.value)}
-            placeholder="308,00"
-            className="w-full bg-transparent text-xl font-extrabold tracking-tight text-[var(--text-primary)] tabular-nums placeholder:text-[var(--text-muted)] focus:outline-none"
-          />
-          <span className="ml-2 shrink-0 text-xs font-bold text-[var(--text-muted)] tabular-nums">
-            ARS / R$ 1
-          </span>
-        </div>
-
-        {/* Seletor Rápido de Banco de Dólar Oficial */}
-        <div className="mt-4 pt-3.5 border-t border-[var(--border-subtle)]">
-          <div className="mb-2 flex items-center justify-between">
-            <span className="text-xs font-bold text-[var(--text-primary)]">
-              Banco do Dólar Oficial
-            </span>
-            <span className="text-xs font-bold text-[var(--brand-primary)] tabular-nums">
-              {activeBankName} • ${formatArs(activeOficialRate, 0)}
-            </span>
-          </div>
-
-          <div
-            role="group"
-            aria-label="Selecionar banco de Dólar Oficial"
-            className="no-scrollbar -mx-1 flex items-center gap-2 overflow-x-auto px-1 pb-1"
-          >
-            {oficialBanks.slice(0, 8).map((bank, idx) => {
-              const isSelected = selectedBankSlug === bank.slug;
-              return (
-                <button
-                  key={bank.slug}
-                  type="button"
-                  onClick={() => onSelectBank(bank.slug)}
-                  aria-pressed={isSelected}
-                  className={`flex min-h-[46px] shrink-0 items-center gap-2 rounded-2xl border px-3 py-1.5 text-left transition active:scale-95 ${
-                    isSelected
-                      ? 'bg-[#5664F5] border-[#5664F5] text-white shadow-md shadow-indigo-500/25'
-                      : 'bank-subtle border-transparent text-[var(--text-primary)] hover:opacity-90'
-                  }`}
-                >
-                  <div
-                    className={`flex h-7 w-7 items-center justify-center rounded-full ${
-                      isSelected ? 'bg-white/20' : 'bg-[var(--bg-card)]'
-                    }`}
-                  >
-                    <ProviderAvatar
-                      src={bank.logoUrl}
-                      name={bank.prettyName}
-                      sizeClass="h-5 w-5"
-                    />
-                  </div>
-                  <div className="leading-tight">
-                    <div className="flex items-center gap-1 text-xs font-bold">
-                      <span>{bank.prettyName}</span>
-                      {idx === 0 && (
-                        <span
-                          className={`rounded px-1 text-[9px] font-extrabold ${
-                            isSelected
-                              ? 'bg-white/25 text-white'
-                              : 'bg-[#5664F5]/15 text-[var(--brand-primary)]'
-                          }`}
-                        >
-                          TOP
-                        </span>
-                      )}
-                    </div>
-                    <div
-                      className={`text-[11px] font-bold tabular-nums ${
-                        isSelected ? 'text-white/90' : 'text-[var(--text-secondary)]'
-                      }`}
-                    >
-                      ${formatArs(bank.ask || 0, 0)}
-                    </div>
-                  </div>
-                </button>
-              );
-            })}
-
-            <button
-              type="button"
-              onClick={() => onSelectBank('manual')}
-              aria-pressed={selectedBankSlug === 'manual'}
-              className={`flex min-h-[46px] shrink-0 items-center gap-1.5 rounded-2xl border px-3.5 py-1.5 text-xs font-bold transition active:scale-95 ${
-                selectedBankSlug === 'manual'
-                  ? 'bg-[#5664F5] border-[#5664F5] text-white shadow-md shadow-indigo-500/25'
-                  : 'bank-subtle border-transparent text-[var(--text-primary)]'
-              }`}
-            >
-              <Edit3 className="h-3.5 w-3.5" />
-              <span>Manual</span>
-            </button>
-          </div>
-
-          {selectedBankSlug === 'manual' && (
-            <div className="bank-subtle mt-2.5 rounded-2xl p-3">
-              <label
-                htmlFor="manual-oficial-input"
-                className="mb-1.5 block text-xs font-bold text-[var(--text-primary)]"
-              >
-                Preço manual do Dólar Oficial (ARS/USD)
-              </label>
-              <div className="flex items-center gap-2">
-                <input
-                  id="manual-oficial-input"
-                  name="manualOficial"
-                  type="text"
-                  inputMode="decimal"
-                  enterKeyHint="done"
-                  autoComplete="off"
-                  autoCorrect="off"
-                  spellCheck={false}
-                  value={manualOficialInput}
-                  onChange={(e) => onManualOficialChange(e.target.value)}
-                  placeholder="1540"
-                  className="bank-input w-full rounded-xl px-3 py-2 text-base font-bold text-[var(--text-primary)] tabular-nums focus:outline-none"
-                />
-                <button
-                  type="button"
-                  onClick={() => onManualOficialChange('1540')}
-                  className="bank-surface shrink-0 rounded-xl px-3 py-2 text-xs font-bold text-[var(--text-primary)] active:scale-95"
-                >
-                  $1.540
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
     </section>
   );
 };
+
+/**
+ * Ícone geométrico limpo no estilo do símbolo do Pix
+ */
+const PixDiamondIcon: React.FC<{ className?: string }> = ({ className }) => (
+  <svg
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2.1"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    className={className}
+    aria-hidden="true"
+  >
+    <path d="M14.8 4.2a2.8 2.8 0 0 0-5.6 0l-5 5a2.8 2.8 0 0 0 0 5.6l5 5a2.8 2.8 0 0 0 5.6 0l5-5a2.8 2.8 0 0 0 0-5.6l-5-5Z" />
+    <path d="M8.5 9.5 12 13l3.5-3.5" />
+    <path d="M8.5 14.5 12 11l3.5 3.5" />
+  </svg>
+);

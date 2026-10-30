@@ -24,7 +24,8 @@ interface RankingTabsProps {
   activeBankName: string;
   activeOficialRate: number;
   selectedBankSlug: string | 'manual';
-  onSelectPixRateForHero: (rate: number, providerName: string) => void;
+  selectedPixSlug: string;
+  onSelectPixRateForHero: (slug: string, rate: number, providerName: string) => void;
   onSelectOficialBank: (slug: string, bankName: string, ask: number) => void;
 }
 
@@ -35,6 +36,7 @@ export const RankingTabs: React.FC<RankingTabsProps> = ({
   activeBankName,
   activeOficialRate,
   selectedBankSlug,
+  selectedPixSlug,
   onSelectPixRateForHero,
   onSelectOficialBank,
 }) => {
@@ -222,11 +224,13 @@ export const RankingTabs: React.FC<RankingTabsProps> = ({
                 key={provider.slug}
                 rank={index + 1}
                 provider={provider}
+                isSelected={selectedPixSlug === provider.slug}
                 cardReferenceRate={cardReferenceRate}
                 beatsCard={true}
                 onSelect={() =>
                   provider.effectiveArsPerBrl &&
                   onSelectPixRateForHero(
+                    provider.slug,
                     provider.effectiveArsPerBrl,
                     provider.prettyName
                   )
@@ -243,7 +247,7 @@ export const RankingTabs: React.FC<RankingTabsProps> = ({
                   </div>
                   <div className="min-w-0">
                     <div className="text-xs font-extrabold text-white">
-                      Cartão USD • {activeBankName}
+                      Cartão USD • dólar {activeBankName}
                     </div>
                     <p className="text-[11px] text-white/80 truncate">
                       {walletsBeatingCard.length === 0
@@ -269,11 +273,13 @@ export const RankingTabs: React.FC<RankingTabsProps> = ({
                 key={provider.slug}
                 rank={walletsBeatingCard.length + index + 1}
                 provider={provider}
+                isSelected={selectedPixSlug === provider.slug}
                 cardReferenceRate={cardReferenceRate}
                 beatsCard={false}
                 onSelect={() =>
                   provider.effectiveArsPerBrl &&
                   onSelectPixRateForHero(
+                    provider.slug,
                     provider.effectiveArsPerBrl,
                     provider.prettyName
                   )
@@ -462,6 +468,7 @@ export const RankingTabs: React.FC<RankingTabsProps> = ({
 interface PixRowProps {
   rank: number;
   provider: PixProviderNormalized;
+  isSelected: boolean;
   cardReferenceRate: number;
   beatsCard: boolean;
   onSelect: () => void;
@@ -470,6 +477,7 @@ interface PixRowProps {
 const PixRow: React.FC<PixRowProps> = ({
   rank,
   provider,
+  isSelected,
   cardReferenceRate,
   beatsCard,
   onSelect,
@@ -491,9 +499,11 @@ const PixRow: React.FC<PixRowProps> = ({
         }
       }}
       className={`flex items-center justify-between gap-2.5 rounded-2xl p-2.5 transition cursor-pointer active:scale-[0.99] ${
-        isArq
-          ? 'bg-[#5664F5]/[0.08] ring-1 ring-[#5664F5]/30'
-          : 'hover:bg-[var(--bg-subtle)]'
+        isSelected
+          ? 'bg-emerald-500/[0.09] ring-1 ring-emerald-500/40'
+          : isArq
+            ? 'bg-[#5664F5]/[0.06] ring-1 ring-[#5664F5]/20'
+            : 'hover:bg-[var(--bg-subtle)]'
       }`}
     >
       <div className="flex items-center gap-3 min-w-0">

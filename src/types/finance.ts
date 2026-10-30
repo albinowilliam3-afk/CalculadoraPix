@@ -79,12 +79,19 @@ export interface CalculatorConfig {
   davidGuardEnabled: boolean;
 }
 
+export type PaymentMode = 'card' | 'pix';
+export type InputCurrencyMode = 'BRL' | 'USD' | 'ARS';
+
 export interface PersistedUserState {
   arqRateInput: string;
   isArqManual: boolean;
   selectedBankSlug: string | 'manual';
+  selectedPixSlug?: string;
+  paymentMode?: PaymentMode;
+  inputCurrency?: InputCurrencyMode;
   manualOficialInput: string;
   purchaseBrlInput: string;
+  usdAmountInput?: string;
   arsBudgetInput?: string;
   converterDirection?: 'BRL_TO_ARS' | 'ARS_TO_BRL';
   config: CalculatorConfig;

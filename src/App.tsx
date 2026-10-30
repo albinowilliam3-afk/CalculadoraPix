@@ -14,6 +14,7 @@ import {
   calculateDualCardQuotes,
   DEFAULT_CONFIG,
   getDavidSpendingFeedback,
+  roundUp2Decimals,
   simulateRealPurchase,
 } from './lib/calculator';
 import { formatArs, parseFlexibleDecimal } from './lib/formatters';
@@ -29,35 +30,46 @@ import {
 } from './lib/theme';
 import type {
   CalculatorConfig,
+  InputCurrencyMode,
   LiveMarketBundle,
+  PaymentMode,
   PersistedUserState,
 } from './types/finance';
 
-const USER_STATE_KEY = 'ars2brl_user_state_v2';
+const USER_STATE_KEY = 'pesopix_user_state_v3';
+const LIVE_POLL_INTERVAL_MS = 25_000;
+const HIGH_SPEND_MODAL_THRESHOLD_BRL = 400;
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>;
 }
 
-const HIGH_SPEND_MODAL_THRESHOLD_BRL = 400;
+function resolveDefaultBankSlug(bundle: LiveMarketBundle): string {
+  if (bundle.usdProviders.some((b) => b.slug === 'uala')) {
+    return 'uala';
+  }
+  return bundle.oficialBanks[0]?.slug || 'uala';
+}
 
 function loadInitialUserState(initialBundle: LiveMarketBundle): PersistedUserState {
+  const defaultBank = resolveDefaultBankSlug(initialBundle);
+
   try {
     const raw = localStorage.getItem(USER_STATE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw) as Partial<PersistedUserState>;
       return {
         arqRateInput:
-          parsed.arqRateInput ||
-          formatArs(initialBundle.arqLiveRate ?? 308),
+          parsed.arqRateInput || formatArs(initialBundle.arqLiveRate ?? 308),
         isArqManual: Boolean(parsed.isArqManual),
-        selectedBankSlug:
-          parsed.selectedBankSlug ||
-          initialBundle.oficialBanks[0]?.slug ||
-          'brubank-ultra',
-        manualOficialInput: parsed.manualOficialInput || '1540',
+        selectedBankSlug: parsed.selectedBankSlug || defaultBank,
+        selectedPixSlug: parsed.selectedPixSlug || 'arq',
+        paymentMode: parsed.paymentMode || 'card',
+        inputCurrency: parsed.inputCurrency || 'BRL',
+        manualOficialInput: parsed.manualOficialInput || '1553',
         purchaseBrlInput: parsed.purchaseBrlInput || '100',
+        usdAmountInput: parsed.usdAmountInput || '20',
         arsBudgetInput: parsed.arsBudgetInput || '30000',
         converterDirection: parsed.converterDirection || 'BRL_TO_ARS',
         config: {
@@ -73,9 +85,13 @@ function loadInitialUserState(initialBundle: LiveMarketBundle): PersistedUserSta
   return {
     arqRateInput: formatArs(initialBundle.arqLiveRate ?? 308),
     isArqManual: false,
-    selectedBankSlug: initialBundle.oficialBanks[0]?.slug || 'brubank-ultra',
-    manualOficialInput: '1540',
+    selectedBankSlug: defaultBank,
+    selectedPixSlug: 'arq',
+    paymentMode: 'card',
+    inputCurrency: 'BRL',
+    manualOficialInput: '1553',
     purchaseBrlInput: '100',
+    usdAmountInput: '20',
     arsBudgetInput: '30000',
     converterDirection: 'BRL_TO_ARS',
     config: DEFAULT_CONFIG,
@@ -113,7 +129,7 @@ export const App: React.FC = () => {
   const [deferredInstallPrompt, setDeferredInstallPrompt] =
     useState<BeforeInstallPromptEvent | null>(null);
   const [isStandalone, setIsStandalone] = useState<boolean>(false);
-  const [, setTickMinute] = useState<number>(0);
+  const [, setTickClock] = useState<number>(0);
 
   const resolvedTheme = useMemo(
     () => resolveTheme(themePref, systemTheme),
@@ -149,7 +165,7 @@ export const App: React.FC = () => {
 
   useEffect(() => {
     if (!toastMessage) return;
-    const t = window.setTimeout(() => setToastMessage(null), 3600);
+    const t = window.setTimeout(() => setToastMessage(null), 3400);
     return () => window.clearTimeout(t);
   }, [toastMessage]);
 
@@ -200,8 +216,9 @@ export const App: React.FC = () => {
     };
   }, [showToast]);
 
+  // Atualiza o rótulo relativo ("agora", "há 1 min") no cabeçalho
   useEffect(() => {
-    const id = window.setInterval(() => setTickMinute((n) => n + 1), 20_000);
+    const id = window.setInterval(() => setTickClock((n) => n + 1), 15_000);
     return () => window.clearInterval(id);
   }, []);
 
@@ -214,8 +231,15 @@ export const App: React.FC = () => {
 
         setUserState((prev) => {
           let nextArqInput = prev.arqRateInput;
-          if (!prev.isArqManual && fresh.arqLiveRate && fresh.arqLiveRate > 0) {
-            nextArqInput = formatArs(fresh.arqLiveRate);
+          const activePixSlug = prev.selectedPixSlug || 'arq';
+          const matchedPix = fresh.pixProviders.find((p) => p.slug === activePixSlug);
+
+          if (!prev.isArqManual) {
+            if (matchedPix?.effectiveArsPerBrl && matchedPix.effectiveArsPerBrl > 0) {
+              nextArqInput = formatArs(matchedPix.effectiveArsPerBrl);
+            } else if (fresh.arqLiveRate && fresh.arqLiveRate > 0) {
+              nextArqInput = formatArs(fresh.arqLiveRate);
+            }
           }
 
           let nextBankSlug = prev.selectedBankSlug;
@@ -224,7 +248,7 @@ export const App: React.FC = () => {
             fresh.usdProviders.length > 0 &&
             !fresh.usdProviders.some((b) => b.slug === nextBankSlug)
           ) {
-            nextBankSlug = fresh.oficialBanks[0]?.slug || fresh.usdProviders[0].slug;
+            nextBankSlug = resolveDefaultBankSlug(fresh);
           }
 
           return {
@@ -248,6 +272,7 @@ export const App: React.FC = () => {
     [showToast]
   );
 
+  // Polling automático rápido (a cada 25s quando visível + ao focar/voltar online)
   useEffect(() => {
     void refreshQuotes(true);
 
@@ -257,30 +282,45 @@ export const App: React.FC = () => {
       }
     };
 
+    const handleFocusOrOnline = () => {
+      if (document.visibilityState === 'visible') {
+        void refreshQuotes(true);
+      }
+    };
+
     const interval = window.setInterval(() => {
       if (document.visibilityState === 'visible') {
         void refreshQuotes(true);
       }
-    }, 90_000);
+    }, LIVE_POLL_INTERVAL_MS);
 
     document.addEventListener('visibilitychange', handleVisibility);
+    window.addEventListener('focus', handleFocusOrOnline);
+    window.addEventListener('online', handleFocusOrOnline);
     return () => {
       document.removeEventListener('visibilitychange', handleVisibility);
+      window.removeEventListener('focus', handleFocusOrOnline);
+      window.removeEventListener('online', handleFocusOrOnline);
       window.clearInterval(interval);
     };
   }, [refreshQuotes]);
+
+  const paymentMode: PaymentMode = userState.paymentMode || 'card';
+  const inputCurrency: InputCurrencyMode = userState.inputCurrency || 'BRL';
+  const selectedPixSlug = userState.selectedPixSlug || 'arq';
 
   const { activeOficialRate, activeBankName } = useMemo(() => {
     if (userState.selectedBankSlug === 'manual') {
       const manualVal = parseFlexibleDecimal(userState.manualOficialInput);
       return {
-        activeOficialRate: manualVal > 0 ? manualVal : 1540,
+        activeOficialRate: manualVal > 0 ? manualVal : 1553,
         activeBankName: 'Manual',
       };
     }
 
     const found =
       market.usdProviders.find((b) => b.slug === userState.selectedBankSlug) ||
+      market.usdProviders.find((b) => b.slug === 'uala') ||
       market.oficialBanks[0];
 
     if (found && found.ask && found.ask > 0) {
@@ -291,8 +331,8 @@ export const App: React.FC = () => {
     }
 
     return {
-      activeOficialRate: 1547,
-      activeBankName: 'Oficial',
+      activeOficialRate: 1553,
+      activeBankName: 'Ualá',
     };
   }, [
     market.oficialBanks,
@@ -306,85 +346,176 @@ export const App: React.FC = () => {
     [userState.arqRateInput]
   );
 
+  const { activePixProvider, activePixRate, activePixName } = useMemo(() => {
+    const foundPix =
+      market.pixProviders.find((p) => p.slug === selectedPixSlug) ||
+      market.pixProviders.find((p) => p.slug === 'arq') ||
+      market.pixProviders[0] ||
+      null;
+
+    if (userState.isArqManual) {
+      return {
+        activePixProvider: foundPix,
+        activePixRate:
+          cotacaoArqNumeric > 0
+            ? cotacaoArqNumeric
+            : (foundPix?.effectiveArsPerBrl ?? market.arqLiveRate ?? 308),
+        activePixName: foundPix
+          ? `${foundPix.prettyName} (manual)`
+          : 'Pix Manual',
+      };
+    }
+
+    if (foundPix && foundPix.effectiveArsPerBrl && foundPix.effectiveArsPerBrl > 0) {
+      return {
+        activePixProvider: foundPix,
+        activePixRate: foundPix.effectiveArsPerBrl,
+        activePixName: foundPix.prettyName,
+      };
+    }
+
+    return {
+      activePixProvider: null,
+      activePixRate:
+        cotacaoArqNumeric > 0 ? cotacaoArqNumeric : (market.arqLiveRate ?? 308),
+      activePixName: 'ARQ (DolarApp)',
+    };
+  }, [
+    cotacaoArqNumeric,
+    market.arqLiveRate,
+    market.pixProviders,
+    selectedPixSlug,
+    userState.isArqManual,
+  ]);
+
   const valorBrlNumeric = useMemo(
     () => parseFlexibleDecimal(userState.purchaseBrlInput),
     [userState.purchaseBrlInput]
   );
 
+  const valorUsdNumeric = useMemo(
+    () => parseFlexibleDecimal(userState.usdAmountInput || '20'),
+    [userState.usdAmountInput]
+  );
+
   const dualQuotes = useMemo(
     () =>
       calculateDualCardQuotes({
-        cotacaoArq: cotacaoArqNumeric,
+        cotacaoArq: activePixRate,
         dolarOficial: activeOficialRate,
         liveSpotUsdBrl: market.spotUsdBrl.bid,
         config: userState.config,
       }),
-    [activeOficialRate, cotacaoArqNumeric, market.spotUsdBrl.bid, userState.config]
+    [activeOficialRate, activePixRate, market.spotUsdBrl.bid, userState.config]
   );
 
   const simulation = useMemo(
     () =>
       simulateRealPurchase({
         valorBrl: valorBrlNumeric,
-        cotacaoArq: cotacaoArqNumeric,
+        cotacaoArq: activePixRate,
         dolarOficialBanco: activeOficialRate,
         usdBrlBandeira: dualQuotes.usdBrlBandeira,
         metodoACotacaoEstimada: dualQuotes.metodoACotacaoEstimada,
       }),
     [
       activeOficialRate,
-      cotacaoArqNumeric,
+      activePixRate,
       dualQuotes.metodoACotacaoEstimada,
       dualQuotes.usdBrlBandeira,
       valorBrlNumeric,
     ]
   );
 
+  const effectiveBrlForAlerts = useMemo(() => {
+    if (inputCurrency === 'USD') {
+      return valorUsdNumeric * dualQuotes.usdBrlComercialSpot;
+    }
+    return valorBrlNumeric;
+  }, [dualQuotes.usdBrlComercialSpot, inputCurrency, valorBrlNumeric, valorUsdNumeric]);
+
+  const modalDolaresFatura = useMemo(() => {
+    if (inputCurrency === 'USD') {
+      return roundUp2Decimals(valorUsdNumeric);
+    }
+    return simulation.dolaresFatura;
+  }, [inputCurrency, simulation.dolaresFatura, valorUsdNumeric]);
+
+  const modalTotalArs = useMemo(() => {
+    if (paymentMode === 'pix') {
+      return effectiveBrlForAlerts * activePixRate;
+    }
+    if (inputCurrency === 'USD') {
+      return modalDolaresFatura * activeOficialRate;
+    }
+    return simulation.custoTotalCartaoArs;
+  }, [
+    activeOficialRate,
+    activePixRate,
+    effectiveBrlForAlerts,
+    inputCurrency,
+    modalDolaresFatura,
+    paymentMode,
+    simulation.custoTotalCartaoArs,
+  ]);
+
+  const effectiveSavingsArs = useMemo(() => {
+    if (inputCurrency === 'USD') {
+      return effectiveBrlForAlerts * activePixRate - modalDolaresFatura * activeOficialRate;
+    }
+    return simulation.economiaTotalArs;
+  }, [
+    activeOficialRate,
+    activePixRate,
+    effectiveBrlForAlerts,
+    inputCurrency,
+    modalDolaresFatura,
+    simulation.economiaTotalArs,
+  ]);
+
   const davidFeedback = useMemo(
     () =>
       getDavidSpendingFeedback(
-        valorBrlNumeric,
-        simulation.economiaTotalArs,
+        effectiveBrlForAlerts,
+        effectiveSavingsArs,
         userState.config.davidGuardEnabled,
         inlinePhraseSeed
       ),
     [
+      effectiveBrlForAlerts,
+      effectiveSavingsArs,
       inlinePhraseSeed,
-      simulation.economiaTotalArs,
       userState.config.davidGuardEnabled,
-      valorBrlNumeric,
     ]
   );
 
-  // Dispara automaticamente o pop-up moderno 3D quando o usuário digita R$ 400+
+  // Dispara automaticamente o pop-up moderno 3D quando o gasto passa de R$ 400
   useEffect(() => {
-    if (
-      !userState.config.davidGuardEnabled ||
-      userState.converterDirection === 'ARS_TO_BRL'
-    ) {
+    if (!userState.config.davidGuardEnabled || inputCurrency === 'ARS') {
       return;
     }
 
-    if (valorBrlNumeric < HIGH_SPEND_MODAL_THRESHOLD_BRL) {
+    if (effectiveBrlForAlerts < HIGH_SPEND_MODAL_THRESHOLD_BRL) {
       lastAlertedAmountRef.current = null;
       return;
     }
 
-    if (lastAlertedAmountRef.current === valorBrlNumeric) {
+    const roundedKey = Math.round(effectiveBrlForAlerts * 100) / 100;
+    if (lastAlertedAmountRef.current === roundedKey) {
       return;
     }
 
     const timer = window.setTimeout(() => {
-      lastAlertedAmountRef.current = valorBrlNumeric;
+      lastAlertedAmountRef.current = roundedKey;
       setDavidModalVariant((v) => v + 1);
       setIsDavidModalOpen(true);
     }, 480);
 
     return () => window.clearTimeout(timer);
   }, [
+    effectiveBrlForAlerts,
+    inputCurrency,
     userState.config.davidGuardEnabled,
-    userState.converterDirection,
-    valorBrlNumeric,
   ]);
 
   const pixSourceLabel = useMemo(() => {
@@ -409,6 +540,8 @@ export const App: React.FC = () => {
   const handleLoadEmpiricalBenchmark = () => {
     setUserState((prev) => ({
       ...prev,
+      paymentMode: 'card',
+      inputCurrency: 'BRL',
       converterDirection: 'BRL_TO_ARS',
       arqRateInput: '330,30',
       isArqManual: true,
@@ -426,21 +559,25 @@ export const App: React.FC = () => {
 
   const handleRestoreLiveDefaults = () => {
     const liveArq = market.arqLiveRate ?? 308;
-    const topBank = market.oficialBanks[0]?.slug || 'brubank-ultra';
+    const defaultBank = resolveDefaultBankSlug(market);
     setUserState((prev) => ({
       ...prev,
+      paymentMode: 'card',
+      inputCurrency: 'BRL',
       converterDirection: 'BRL_TO_ARS',
       arqRateInput: formatArs(liveArq),
       isArqManual: false,
-      selectedBankSlug: topBank,
+      selectedBankSlug: defaultBank,
+      selectedPixSlug: 'arq',
       purchaseBrlInput: '100',
+      usdAmountInput: '20',
       arsBudgetInput: '30000',
       config: {
         ...DEFAULT_CONFIG,
         davidGuardEnabled: prev.config.davidGuardEnabled,
       },
     }));
-    showToast('⚡ Valores ao vivo restaurados!');
+    showToast('⚡ Padrão Ualá + ARQ (ao vivo) restaurado!');
   };
 
   const handleSecretTripleTap = () => {
@@ -473,7 +610,26 @@ export const App: React.FC = () => {
       userState.config.davidGuardEnabled &&
       numeric >= HIGH_SPEND_MODAL_THRESHOLD_BRL
     ) {
-      lastAlertedAmountRef.current = numeric;
+      lastAlertedAmountRef.current = Math.round(numeric * 100) / 100;
+      setDavidModalVariant((v) => v + 1);
+      setIsDavidModalOpen(true);
+    }
+  };
+
+  const handleUsdAmountChange = (val: string, isInstantPreset = false) => {
+    setUserState((prev) => ({
+      ...prev,
+      usdAmountInput: val,
+    }));
+
+    const numericUsd = parseFlexibleDecimal(val);
+    const equivBrl = numericUsd * dualQuotes.usdBrlComercialSpot;
+    if (
+      isInstantPreset &&
+      userState.config.davidGuardEnabled &&
+      equivBrl >= HIGH_SPEND_MODAL_THRESHOLD_BRL
+    ) {
+      lastAlertedAmountRef.current = Math.round(equivBrl * 100) / 100;
       setDavidModalVariant((v) => v + 1);
       setIsDavidModalOpen(true);
     }
@@ -508,34 +664,44 @@ export const App: React.FC = () => {
       )}
 
       <main className="mx-auto w-full max-w-lg flex-1 space-y-4 px-4 py-4 pb-safe">
-        {/* CONVERSOR BANCÁRIO DIRETO NO TOPO: R$ 100 -> $ 28.960 ARS */}
         <SmartConverterHero
-          direction={userState.converterDirection || 'BRL_TO_ARS'}
+          paymentMode={paymentMode}
+          inputCurrency={inputCurrency}
           purchaseBrlInput={userState.purchaseBrlInput}
+          usdAmountInput={userState.usdAmountInput || '20'}
           arsBudgetInput={userState.arsBudgetInput || '30000'}
           arqRateInput={userState.arqRateInput}
           isArqManual={userState.isArqManual}
-          arqLiveRate={market.arqLiveRate}
           cotacaoArqNumeric={cotacaoArqNumeric}
           oficialBanks={market.oficialBanks}
+          pixProviders={market.pixProviders}
           selectedBankSlug={userState.selectedBankSlug}
+          selectedPixSlug={selectedPixSlug}
           manualOficialInput={userState.manualOficialInput}
           activeOficialRate={activeOficialRate}
           activeBankName={activeBankName}
+          activePixProvider={activePixProvider}
+          activePixRate={activePixRate}
+          activePixName={activePixName}
           cardSpreadPct={userState.config.cardSpread * 100}
           quotes={dualQuotes}
           simulation={simulation}
           davidFeedback={davidFeedback}
-          onToggleDirection={() =>
+          onChangePaymentMode={(mode) =>
             setUserState((prev) => ({
               ...prev,
-              converterDirection:
-                prev.converterDirection === 'ARS_TO_BRL'
-                  ? 'BRL_TO_ARS'
-                  : 'ARS_TO_BRL',
+              paymentMode: mode,
+            }))
+          }
+          onChangeInputCurrency={(currency) =>
+            setUserState((prev) => ({
+              ...prev,
+              inputCurrency: currency,
+              converterDirection: currency === 'ARS' ? 'ARS_TO_BRL' : 'BRL_TO_ARS',
             }))
           }
           onPurchaseBrlChange={handlePurchaseBrlChange}
+          onUsdAmountChange={handleUsdAmountChange}
           onArsBudgetChange={(val) =>
             setUserState((prev) => ({
               ...prev,
@@ -550,18 +716,35 @@ export const App: React.FC = () => {
             }))
           }
           onResetArqToLive={() => {
-            if (!market.arqLiveRate) return;
+            const arqProvider =
+              market.pixProviders.find((p) => p.slug === 'arq') ||
+              market.pixProviders[0];
+            const liveRate = arqProvider?.effectiveArsPerBrl ?? market.arqLiveRate;
+            if (!liveRate) return;
             setUserState((prev) => ({
               ...prev,
-              arqRateInput: formatArs(market.arqLiveRate!),
+              selectedPixSlug: 'arq',
+              arqRateInput: formatArs(liveRate),
               isArqManual: false,
             }));
-            showToast(`Cotação ARQ sincronizada: $${formatArs(market.arqLiveRate)}`);
+            showToast(`Cotação ARQ ao vivo restaurada: $${formatArs(liveRate)}`);
           }}
-          onSelectBank={(slug) => {
+          onSelectBank={(slug) =>
             setUserState((prev) => ({
               ...prev,
               selectedBankSlug: slug,
+            }))
+          }
+          onSelectPixProvider={(slug) => {
+            const chosen = market.pixProviders.find((p) => p.slug === slug);
+            setUserState((prev) => ({
+              ...prev,
+              selectedPixSlug: slug,
+              arqRateInput:
+                chosen?.effectiveArsPerBrl && chosen.effectiveArsPerBrl > 0
+                  ? formatArs(chosen.effectiveArsPerBrl)
+                  : prev.arqRateInput,
+              isArqManual: false,
             }));
           }}
           onManualOficialChange={(val) =>
@@ -585,29 +768,34 @@ export const App: React.FC = () => {
           activeBankName={activeBankName}
           activeOficialRate={activeOficialRate}
           selectedBankSlug={userState.selectedBankSlug}
-          onSelectPixRateForHero={(rate, providerName) => {
+          selectedPixSlug={selectedPixSlug}
+          onSelectPixRateForHero={(slug, rate, providerName) => {
             setUserState((prev) => ({
               ...prev,
+              paymentMode: 'pix',
+              selectedPixSlug: slug,
               arqRateInput: formatArs(rate),
-              isArqManual: true,
+              isArqManual: false,
             }));
             window.scrollTo({ top: 0, behavior: 'smooth' });
-            showToast(`Comparando Cartão contra ${providerName} ($${formatArs(rate)})`);
+            showToast(`Modo Transferência Pix: ${providerName} ($${formatArs(rate)})`);
           }}
           onSelectOficialBank={(slug, bankName, ask) => {
             setUserState((prev) => ({
               ...prev,
+              paymentMode: 'card',
               selectedBankSlug: slug,
             }));
+            window.scrollTo({ top: 0, behavior: 'smooth' });
             showToast(
-              `Banco base alterado para ${bankName} ($${formatArs(ask, ask % 1 === 0 ? 0 : 2)})`
+              `Cartão atualizado: dólar ${bankName} ($${formatArs(ask, ask % 1 === 0 ? 0 : 2)})`
             );
           }}
         />
 
         <footer className="pt-2 pb-4 text-center text-[11px] text-[var(--text-muted)] space-y-1">
           <p>
-            Cotações em tempo real via{' '}
+            Cotações atualizadas automaticamente a cada 25s via{' '}
             <a
               href="https://comparapix.ar"
               target="_blank"
@@ -634,19 +822,24 @@ export const App: React.FC = () => {
 
       <DavidWarningModal
         isOpen={isDavidModalOpen}
-        valorBrl={valorBrlNumeric}
-        custoTotalArs={simulation.custoTotalCartaoArs}
-        dolaresFatura={simulation.dolaresFatura}
+        valorBrl={effectiveBrlForAlerts}
+        custoTotalArs={modalTotalArs}
+        dolaresFatura={modalDolaresFatura}
         variantIndex={davidModalVariant}
         onAccept={() => setIsDavidModalOpen(false)}
         onLowerToSafeAmount={() => {
           lastAlertedAmountRef.current = null;
           setIsDavidModalOpen(false);
-          setUserState((prev) => ({
-            ...prev,
-            purchaseBrlInput: '100',
-          }));
-          showToast('👏 Aí sim, David! Voltou pros R$ 100 — orgulho de você!');
+          setUserState((prev) =>
+            (prev.inputCurrency || 'BRL') === 'USD'
+              ? { ...prev, usdAmountInput: '20' }
+              : { ...prev, purchaseBrlInput: '100' }
+          );
+          showToast(
+            inputCurrency === 'USD'
+              ? '👏 Aí sim, David! Voltou pros US$ 20 — orgulho de você!'
+              : '👏 Aí sim, David! Voltou pros R$ 100 — orgulho de você!'
+          );
         }}
         onNextVariant={() => setDavidModalVariant((v) => v + 1)}
       />

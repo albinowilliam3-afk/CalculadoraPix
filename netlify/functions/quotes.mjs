@@ -4,26 +4,28 @@ const SOURCES = {
     fallbackUrl: 'https://criptoya.com/api/pix',
     headers: {
       Accept: 'application/json',
-      'User-Agent': 'ARS2BRL-SmartConverter/1.0',
+      Origin: 'https://comparapix.ar',
+      Referer: 'https://comparapix.ar/',
+      'User-Agent': 'PesoPix-Calculadora/1.0',
     },
-    maxAge: 60,
+    maxAge: 15,
   },
   comparadolar: {
     url: 'https://api.comparadolar.ar/usd',
     headers: {
       Accept: 'application/json',
-      'User-Agent': 'ARS2BRL-SmartConverter/1.0',
+      'User-Agent': 'PesoPix-Calculadora/1.0',
     },
-    maxAge: 60,
+    maxAge: 15,
   },
   usdbrl: {
     url: 'https://economia.awesomeapi.com.br/json/last/USD-BRL',
     fallbackUrl: 'https://open.er-api.com/v6/latest/USD',
     headers: {
       Accept: 'application/json',
-      'User-Agent': 'ARS2BRL-SmartConverter/1.0',
+      'User-Agent': 'PesoPix-Calculadora/1.0',
     },
-    maxAge: 60,
+    maxAge: 20,
   },
 };
 
