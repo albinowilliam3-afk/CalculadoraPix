@@ -93,6 +93,13 @@ function loadInitialUserState(initialBundle: LiveMarketBundle): PersistedUserSta
           ? config.defaultBankSlug || defaultBank
           : parsed.selectedBankSlug || config.defaultBankSlug || defaultBank;
 
+      const rawCurrency = parsed.inputCurrency as string;
+      const paymentMode = parsed.paymentMode || 'card';
+      const inputCurrency: InputCurrencyMode =
+        paymentMode === 'pix' || rawCurrency === 'ARS' || !rawCurrency
+          ? 'BRL'
+          : (rawCurrency as InputCurrencyMode);
+
       return {
         arqRateInput:
           resolvedPixSlug === 'banco-galicia'
@@ -101,14 +108,13 @@ function loadInitialUserState(initialBundle: LiveMarketBundle): PersistedUserSta
         isArqManual,
         selectedBankSlug: bankSlug,
         selectedPixSlug: resolvedPixSlug,
-        paymentMode: parsed.paymentMode || 'card',
-        inputCurrency: parsed.inputCurrency || 'BRL',
+        paymentMode,
+        inputCurrency,
         manualOficialInput: parsed.manualOficialInput || '1553',
         purchaseBrlInput: purchaseBrl,
-        usdAmountInput: parsed.usdAmountInput || '20',
-        eurAmountInput: parsed.eurAmountInput || '31,45',
-        arsBudgetInput: parsed.arsBudgetInput || '30000',
-        converterDirection: parsed.converterDirection || 'BRL_TO_ARS',
+        usdAmountInput: parsed.usdAmountInput ?? '20',
+        eurAmountInput: parsed.eurAmountInput ?? '31,45',
+        converterDirection: 'BRL_TO_ARS',
         config,
       };
     }
@@ -127,7 +133,6 @@ function loadInitialUserState(initialBundle: LiveMarketBundle): PersistedUserSta
     purchaseBrlInput: '100',
     usdAmountInput: '20',
     eurAmountInput: '31,45',
-    arsBudgetInput: '30000',
     converterDirection: 'BRL_TO_ARS',
     config: DEFAULT_CONFIG,
   };
@@ -427,12 +432,12 @@ export const App: React.FC = () => {
   );
 
   const valorUsdNumeric = useMemo(
-    () => parseFlexibleDecimal(userState.usdAmountInput || '20'),
+    () => parseFlexibleDecimal(userState.usdAmountInput || '0'),
     [userState.usdAmountInput]
   );
 
   const valorEurNumeric = useMemo(
-    () => parseFlexibleDecimal(userState.eurAmountInput || '31,45'),
+    () => parseFlexibleDecimal(userState.eurAmountInput || '0'),
     [userState.eurAmountInput]
   );
 
@@ -545,7 +550,7 @@ export const App: React.FC = () => {
 
   // Dispara automaticamente o pop-up moderno 3D quando o gasto passa de R$ 400
   useEffect(() => {
-    if (!userState.config.davidGuardEnabled || inputCurrency === 'ARS') {
+    if (!userState.config.davidGuardEnabled) {
       return;
     }
 
@@ -727,9 +732,8 @@ export const App: React.FC = () => {
           paymentMode={paymentMode}
           inputCurrency={inputCurrency}
           purchaseBrlInput={userState.purchaseBrlInput}
-          usdAmountInput={userState.usdAmountInput || '20'}
-          eurAmountInput={userState.eurAmountInput || '31,45'}
-          arsBudgetInput={userState.arsBudgetInput || '30000'}
+          usdAmountInput={userState.usdAmountInput ?? ''}
+          eurAmountInput={userState.eurAmountInput ?? ''}
           arqRateInput={userState.arqRateInput}
           isArqManual={userState.isArqManual}
           cotacaoArqNumeric={cotacaoArqNumeric}
@@ -751,13 +755,13 @@ export const App: React.FC = () => {
             setUserState((prev) => ({
               ...prev,
               paymentMode: mode,
+              inputCurrency: mode === 'pix' ? 'BRL' : prev.inputCurrency,
             }))
           }
           onChangeInputCurrency={(currency) =>
             setUserState((prev) => ({
               ...prev,
               inputCurrency: currency,
-              converterDirection: currency === 'ARS' ? 'ARS_TO_BRL' : 'BRL_TO_ARS',
             }))
           }
           onPurchaseBrlChange={handlePurchaseBrlChange}

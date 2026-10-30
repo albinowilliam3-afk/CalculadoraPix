@@ -84,7 +84,7 @@ export interface CalculatorConfig {
 }
 
 export type PaymentMode = 'card' | 'pix';
-export type InputCurrencyMode = 'BRL' | 'USD' | 'EUR' | 'ARS';
+export type InputCurrencyMode = 'BRL' | 'USD' | 'EUR';
 
 export interface PersistedUserState {
   arqRateInput: string;

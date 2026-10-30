@@ -36,7 +36,7 @@ interface SmartConverterHeroProps {
   purchaseBrlInput: string;
   usdAmountInput: string;
   eurAmountInput: string;
-  arsBudgetInput: string;
+  arsBudgetInput?: string;
   arqRateInput?: string;
   isArqManual: boolean;
   cotacaoArqNumeric: number;
@@ -59,7 +59,7 @@ interface SmartConverterHeroProps {
   onPurchaseBrlChange: (val: string, isInstantPreset?: boolean) => void;
   onUsdAmountChange: (val: string, isInstantPreset?: boolean) => void;
   onEurAmountChange: (val: string, isInstantPreset?: boolean) => void;
-  onArsBudgetChange: (val: string) => void;
+  onArsBudgetChange?: (val: string) => void;
   onArqInputChange?: (val: string) => void;
   onResetArqToLive?: () => void;
   onSelectBank: (slug: string | 'manual') => void;
@@ -101,14 +101,6 @@ const EUR_PRESETS: AmountPreset[] = [
   { label: '€ 100', value: '100' },
 ];
 
-const ARS_PRESETS: AmountPreset[] = [
-  { label: '$ 10.000', value: '10000' },
-  { label: '$ 30.000', value: '30000' },
-  { label: '$ 50.000', value: '50000' },
-  { label: '$ 100.000', value: '100000' },
-  { label: '$ 250.000', value: '250000' },
-];
-
 function splitFormattedCurrency(formatted: string): { intPart: string; decPart: string } {
   const commaIdx = formatted.lastIndexOf(',');
   if (commaIdx === -1) return { intPart: formatted, decPart: '' };
@@ -124,7 +116,6 @@ export const SmartConverterHero: React.FC<SmartConverterHeroProps> = ({
   purchaseBrlInput,
   usdAmountInput,
   eurAmountInput,
-  arsBudgetInput,
   isArqManual,
   oficialBanks,
   pixProviders,
@@ -144,7 +135,6 @@ export const SmartConverterHero: React.FC<SmartConverterHeroProps> = ({
   onPurchaseBrlChange,
   onUsdAmountChange,
   onEurAmountChange,
-  onArsBudgetChange,
   onSelectBank,
   onSelectPixProvider,
   onCycleInlinePhrase,
@@ -154,7 +144,6 @@ export const SmartConverterHero: React.FC<SmartConverterHeroProps> = ({
   const cardHeadingRef = useRef<HTMLDivElement>(null);
 
   const isCardMode = paymentMode === 'card';
-  const isArsInput = inputCurrency === 'ARS';
   const isUsdInput = inputCurrency === 'USD';
   const isEurInput = inputCurrency === 'EUR';
 
@@ -168,6 +157,10 @@ export const SmartConverterHero: React.FC<SmartConverterHeroProps> = ({
 
   const switchPaymentModeSmooth = (nextMode: PaymentMode) => {
     if (nextMode === paymentMode) return;
+
+    if (nextMode === 'pix' && inputCurrency !== 'BRL') {
+      onChangeInputCurrency('BRL');
+    }
 
     const docWithVT = document as Document & {
       startViewTransition?: (cb: () => void) => { finished: Promise<void> };
@@ -192,10 +185,9 @@ export const SmartConverterHero: React.FC<SmartConverterHeroProps> = ({
     });
   };
 
-  // Cálculos conforme a moeda digitada (BRL, USD, EUR ou ARS)
+  // Cálculos conforme a moeda digitada (BRL, USD ou EUR)
   const usdNumeric = parseFlexibleDecimal(usdAmountInput);
   const eurNumeric = parseFlexibleDecimal(eurAmountInput);
-  const arsNumeric = parseFlexibleDecimal(arsBudgetInput);
 
   // Quantidade de dólares na fatura (em BRL usa simulação exata; em USD usa o valor digitado; em EUR converte pela taxa calibrada da bandeira)
   const effectiveDolaresFatura = isUsdInput
@@ -223,30 +215,16 @@ export const SmartConverterHero: React.FC<SmartConverterHeroProps> = ({
   const baseArs = Math.min(totalCardArs, totalPixArs);
   const diffPctArs = baseArs > 0 ? (diffArsAbs / baseArs) * 100 : 0;
 
-  // Totais reversos em Reais (quando digitando orçamento em Pesos ARS)
-  const reverseBrlOnCard =
-    quotes.cardReferenceRate > 0 ? arsNumeric / quotes.cardReferenceRate : 0;
-  const reverseBrlOnPix = activePixRate > 0 ? arsNumeric / activePixRate : 0;
-  const reverseUsdOnCard = activeOficialRate > 0 ? arsNumeric / activeOficialRate : 0;
-  const reverseDiffBrl = reverseBrlOnCard - reverseBrlOnPix;
-  const baseReverseBrl = Math.max(reverseBrlOnCard, reverseBrlOnPix);
-  const reverseDiffPct =
-    baseReverseBrl > 0 ? (Math.abs(reverseDiffBrl) / baseReverseBrl) * 100 : 0;
-
   // Comparação de vantagem (Economiza vs Perde):
-  // Se input em Pesos (ARS): gasta MENOS Reais quem tem menor reverseBrl (vantagem para quem gasta menos)
-  // Se input em Reais (BRL), Dólar (USD) ou Euro (EUR): rende MAIS Pesos quem tem maior totalArs (vantagem para quem entrega mais)
-  const cardSaves = isArsInput
-    ? reverseBrlOnCard <= reverseBrlOnPix
-    : totalCardArs >= totalPixArs;
-  const pixSaves = isArsInput
-    ? reverseBrlOnPix < reverseBrlOnCard
-    : totalPixArs > totalCardArs;
+  // Rende MAIS Pesos quem tem maior totalArs (vantagem para quem entrega mais)
+  const cardSaves = totalCardArs >= totalPixArs;
+  const pixSaves = totalPixArs > totalCardArs;
 
   // Número principal exibido gigante dentro do cartão (Roxo ou Verde)
-  const primaryDisplayFormatted = isArsInput
-    ? formatBrl(isCardMode ? reverseBrlOnCard : reverseBrlOnPix)
-    : formatArs(isCardMode ? totalCardArs : totalPixArs, 2);
+  const primaryDisplayFormatted = formatArs(
+    isCardMode ? totalCardArs : totalPixArs,
+    2
+  );
 
   const { intPart: mainInt, decPart: mainDec } = splitFormattedCurrency(
     primaryDisplayFormatted
@@ -326,18 +304,14 @@ export const SmartConverterHero: React.FC<SmartConverterHeroProps> = ({
       ? purchaseBrlInput
       : inputCurrency === 'USD'
         ? usdAmountInput
-        : inputCurrency === 'EUR'
-          ? eurAmountInput
-          : arsBudgetInput;
+        : eurAmountInput;
 
   const activePresets =
     inputCurrency === 'BRL'
       ? BRL_PRESETS
       : inputCurrency === 'USD'
         ? USD_PRESETS
-        : inputCurrency === 'EUR'
-          ? EUR_PRESETS
-          : ARS_PRESETS;
+        : EUR_PRESETS;
 
   const davidBannerStyles: Record<DavidSpendingFeedback['level'], string> = {
     benchmark: 'bg-[#5664F5]/10 border-[#5664F5]/25',
@@ -367,43 +341,46 @@ export const SmartConverterHero: React.FC<SmartConverterHeroProps> = ({
                 ? 'Quanto custa em Reais?'
                 : inputCurrency === 'USD'
                   ? 'Quanto custa em Dólar?'
-                  : inputCurrency === 'EUR'
-                    ? 'Quanto custa em Euro?'
-                    : 'Quantos Pesos você tem?'}
+                  : 'Quanto custa em Euro?'}
             </label>
 
-            {/* Seletor simples de moeda sem siglas confusas */}
-            <div
-              role="group"
-              aria-label="Escolher moeda digitada"
-              className="bank-subtle inline-flex items-center gap-0.5 rounded-full p-0.5"
-            >
-              {(
-                [
-                  { id: 'BRL', label: 'R$ Reais' },
-                  { id: 'USD', label: 'US$ Dólar' },
-                  { id: 'EUR', label: '€ Euro' },
-                  { id: 'ARS', label: '$ Pesos' },
-                ] as const
-              ).map((curr) => {
-                const active = inputCurrency === curr.id;
-                return (
-                  <button
-                    key={curr.id}
-                    type="button"
-                    onClick={() => onChangeInputCurrency(curr.id)}
-                    aria-pressed={active}
-                    className={`rounded-full px-2.5 py-1 text-[11px] font-bold transition active:scale-95 ${
-                      active
-                        ? 'bg-[var(--bg-card)] text-[var(--brand-primary)] shadow-sm'
-                        : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'
-                    }`}
-                  >
-                    {curr.label}
-                  </button>
-                );
-              })}
-            </div>
+            {/* Seletor simples de moeda: Cartão aceita BRL/USD/EUR; Pix aceita exclusivamente Reais */}
+            {isCardMode ? (
+              <div
+                role="group"
+                aria-label="Escolher moeda digitada"
+                className="bank-subtle inline-flex items-center gap-0.5 rounded-full p-0.5"
+              >
+                {(
+                  [
+                    { id: 'BRL', label: 'R$ Reais' },
+                    { id: 'USD', label: 'US$ Dólar' },
+                    { id: 'EUR', label: '€ Euro' },
+                  ] as const
+                ).map((curr) => {
+                  const active = inputCurrency === curr.id;
+                  return (
+                    <button
+                      key={curr.id}
+                      type="button"
+                      onClick={() => onChangeInputCurrency(curr.id)}
+                      aria-pressed={active}
+                      className={`rounded-full px-2.5 py-1 text-[11px] font-bold transition active:scale-95 ${
+                        active
+                          ? 'bg-[var(--bg-card)] text-[var(--brand-primary)] shadow-sm'
+                          : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'
+                      }`}
+                    >
+                      {curr.label}
+                    </button>
+                  );
+                })}
+              </div>
+            ) : (
+              <span className="bank-subtle inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-bold text-[var(--text-secondary)]">
+                R$ Reais
+              </span>
+            )}
           </div>
 
           <div className="bank-input flex items-center rounded-2xl px-4 py-3 transition">
@@ -416,9 +393,7 @@ export const SmartConverterHero: React.FC<SmartConverterHeroProps> = ({
                 ? 'R$'
                 : inputCurrency === 'USD'
                   ? 'US$'
-                  : inputCurrency === 'EUR'
-                    ? '€'
-                    : '$'}
+                  : '€'}
             </span>
             <input
               id="main-amount-input"
@@ -435,18 +410,9 @@ export const SmartConverterHero: React.FC<SmartConverterHeroProps> = ({
                 const v = e.target.value;
                 if (inputCurrency === 'BRL') onPurchaseBrlChange(v, false);
                 else if (inputCurrency === 'USD') onUsdAmountChange(v, false);
-                else if (inputCurrency === 'EUR') onEurAmountChange(v, false);
-                else onArsBudgetChange(v);
+                else onEurAmountChange(v, false);
               }}
-              placeholder={
-                inputCurrency === 'BRL'
-                  ? '100'
-                  : inputCurrency === 'USD'
-                    ? '20'
-                    : inputCurrency === 'EUR'
-                      ? '31,45'
-                      : '30000'
-              }
+              placeholder="0"
               className="w-full bg-transparent text-3xl sm:text-4xl font-extrabold tracking-tight text-[var(--text-primary)] tabular-nums placeholder:text-[var(--text-muted)] focus:outline-none"
             />
             <span className="bank-subtle ml-2 shrink-0 select-none rounded-xl px-2.5 py-1 text-xs font-extrabold text-[var(--text-primary)]">
@@ -467,8 +433,7 @@ export const SmartConverterHero: React.FC<SmartConverterHeroProps> = ({
                   onClick={() => {
                     if (inputCurrency === 'BRL') onPurchaseBrlChange(preset.value, true);
                     else if (inputCurrency === 'USD') onUsdAmountChange(preset.value, true);
-                    else if (inputCurrency === 'EUR') onEurAmountChange(preset.value, true);
-                    else onArsBudgetChange(preset.value);
+                    else onEurAmountChange(preset.value, true);
                   }}
                   className={`min-h-[36px] shrink-0 rounded-xl px-3 py-1 text-xs font-bold transition active:scale-95 ${
                     isActive
@@ -602,18 +567,16 @@ export const SmartConverterHero: React.FC<SmartConverterHeroProps> = ({
             )}
           </div>
 
-          {/* VALOR PRINCIPAL GIGANTE EM PESOS (OU REAIS SE DIGITOU PESOS) */}
+          {/* VALOR PRINCIPAL GIGANTE EM PESOS */}
           <div className="relative z-10 mt-3.5">
             <div className="text-[11px] font-semibold uppercase tracking-wider text-white/80">
-              {isArsInput
-                ? 'Você consegue gastar no Brasil'
-                : 'Você vai pagar em Pesos'}
+              Você vai pagar em Pesos
             </div>
 
             <div className="mt-1 flex flex-wrap items-baseline justify-between gap-2">
               <div className="flex items-baseline tabular-nums">
                 <span className="mr-1.5 text-xl sm:text-2xl font-bold text-white/85">
-                  {isArsInput ? 'R$' : '$'}
+                  $
                 </span>
                 <span className="text-4xl sm:text-[42px] font-extrabold leading-none tracking-tight text-white">
                   {mainInt}
@@ -622,16 +585,14 @@ export const SmartConverterHero: React.FC<SmartConverterHeroProps> = ({
                   {mainDec}
                 </span>
                 <span className="ml-2 text-xs font-bold uppercase text-white/80">
-                  {isArsInput ? 'BRL' : 'ARS'}
+                  ARS
                 </span>
               </div>
 
               {/* Pill secundária clara (Fatura USD no Cartão ou Cotação por R$ 1 no Pix) */}
               <span className="rounded-xl bg-white/18 px-2.5 py-1 text-xs font-extrabold text-white backdrop-blur-sm tabular-nums">
                 {isCardMode
-                  ? `Fatura: US$ ${formatUsd(
-                      isArsInput ? reverseUsdOnCard : effectiveDolaresFatura
-                    )}`
+                  ? `Fatura: US$ ${formatUsd(effectiveDolaresFatura)}`
                   : `$ ${formatArs(activePixRate)} / R$ 1`}
               </span>
             </div>
@@ -646,9 +607,7 @@ export const SmartConverterHero: React.FC<SmartConverterHeroProps> = ({
                     No Pix ({activePixName.replace(/\s*\(manual\)\)?/gi, '').replace(/\s*\(MODO\)\)?/gi, '').replace('ARQ (DolarApp)', 'ARQ')}):{' '}
                   </span>
                   <strong className="font-extrabold text-white">
-                    {isArsInput
-                      ? `R$ ${formatBrl(reverseBrlOnPix)}`
-                      : `$ ${formatArs(totalPixArs, 0)} ARS`}
+                    $ {formatArs(totalPixArs, 0)} ARS
                   </strong>
                 </div>
 
@@ -659,13 +618,7 @@ export const SmartConverterHero: React.FC<SmartConverterHeroProps> = ({
                       : 'bg-rose-500/85 text-white border border-rose-300/50'
                   }`}
                 >
-                  {isArsInput ? (
-                    cardSaves ? (
-                      <>Cartão economiza R$ {formatBrl(Math.abs(reverseDiffBrl))} (-{formatPct(reverseDiffPct, 1)})</>
-                    ) : (
-                      <>Cartão perde R$ {formatBrl(Math.abs(reverseDiffBrl))} (+{formatPct(reverseDiffPct, 1)})</>
-                    )
-                  ) : cardSaves ? (
+                  {cardSaves ? (
                     <>
                       Cartão economiza $ {formatArs(diffArsAbs, 0)} (-{formatPct(diffPctArs, 1)})
                     </>
@@ -681,9 +634,7 @@ export const SmartConverterHero: React.FC<SmartConverterHeroProps> = ({
                 <div className="min-w-0 truncate text-white/90 tabular-nums">
                   <span>No cartão ({activeBankName.replace(/\s*\(manual\)\)?/gi, '')}): </span>
                   <strong className="font-extrabold text-white">
-                    {isArsInput
-                      ? `R$ ${formatBrl(reverseBrlOnCard)}`
-                      : `$ ${formatArs(totalCardArs, 0)} ARS`}
+                    $ {formatArs(totalCardArs, 0)} ARS
                   </strong>
                 </div>
 
@@ -696,13 +647,7 @@ export const SmartConverterHero: React.FC<SmartConverterHeroProps> = ({
                       : 'bg-rose-500/85 text-white border border-rose-300/50'
                   }`}
                 >
-                  {isArsInput ? (
-                    pixSaves ? (
-                      <>Pix economiza R$ {formatBrl(Math.abs(reverseDiffBrl))} (-{formatPct(reverseDiffPct, 1)})</>
-                    ) : (
-                      <>Pix perde R$ {formatBrl(Math.abs(reverseDiffBrl))} (+{formatPct(reverseDiffPct, 1)})</>
-                    )
-                  ) : pixSaves ? (
+                  {pixSaves ? (
                     <>
                       Pix economiza $ {formatArs(diffArsAbs, 0)} (-{formatPct(diffPctArs, 1)})
                     </>
@@ -800,7 +745,7 @@ export const SmartConverterHero: React.FC<SmartConverterHeroProps> = ({
                   : 'Top 5 melhores cotações • Transferência Pix'}
               </h3>
               <p className="text-[11px] text-[var(--text-muted)]">
-                Toque para trocar • role para comparar o valor em {isArsInput ? 'Reais' : 'Pesos'}
+                Toque para trocar • role para comparar o valor em Pesos
               </p>
             </div>
 
@@ -831,10 +776,6 @@ export const SmartConverterHero: React.FC<SmartConverterHeroProps> = ({
                     oficialBanks.findIndex((b) => b.slug === bank.slug) + 1;
 
                   const rowTotalArs = effectiveDolaresFatura * bankAsk;
-                  const rowReverseBrl =
-                    quotes.usdBrlBandeira > 0 && bankAsk > 0
-                      ? (arsNumeric / bankAsk) * quotes.usdBrlBandeira
-                      : 0;
 
                   return (
                     <button
@@ -877,9 +818,7 @@ export const SmartConverterHero: React.FC<SmartConverterHeroProps> = ({
                       <div className="flex items-center gap-2 shrink-0">
                         <div className="text-right tabular-nums">
                           <div className="text-xs sm:text-sm font-extrabold text-[var(--text-primary)]">
-                            {isArsInput
-                              ? `R$ ${formatBrl(rowReverseBrl)}`
-                              : `$ ${formatArs(rowTotalArs, 0)} ARS`}
+                            $ {formatArs(rowTotalArs, 0)} ARS
                           </div>
                           <div className="text-[10px] font-bold text-[var(--brand-primary)]">
                             {isSelected ? 'Em uso' : 'Usar'}
@@ -907,7 +846,6 @@ export const SmartConverterHero: React.FC<SmartConverterHeroProps> = ({
                     ) + 1;
 
                   const rowTotalArs = effectiveBrlForPix * wRate;
-                  const rowReverseBrl = wRate > 0 ? arsNumeric / wRate : 0;
 
                   return (
                     <button
@@ -950,9 +888,7 @@ export const SmartConverterHero: React.FC<SmartConverterHeroProps> = ({
                       <div className="flex items-center gap-2 shrink-0">
                         <div className="text-right tabular-nums">
                           <div className="text-xs sm:text-sm font-extrabold text-[var(--text-primary)]">
-                            {isArsInput
-                              ? `R$ ${formatBrl(rowReverseBrl)}`
-                              : `$ ${formatArs(rowTotalArs, 0)} ARS`}
+                            $ {formatArs(rowTotalArs, 0)} ARS
                           </div>
                           <div className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400">
                             {isSelected ? 'Em uso' : 'Usar'}
@@ -974,7 +910,7 @@ export const SmartConverterHero: React.FC<SmartConverterHeroProps> = ({
         {/* =================================================================
             RECADOS BEM-HUMORADOS DIRETO PRO DAVID
             ================================================================= */}
-        {!isArsInput && davidFeedback && (
+        {davidFeedback && (
           <div
             className={`mt-3.5 rounded-2xl border px-3.5 py-2.5 transition-all ${davidBannerStyles[davidFeedback.level]}`}
           >
