@@ -79,7 +79,11 @@ export const RankingTabs: React.FC<RankingTabsProps> = ({
       return !p.isEstimatedArs;
     }
     if (pixFilter === 'wallets') {
-      return p.estimationBasis !== 'Oficial CBU' || p.slug === 'banco-credicoop';
+      return (
+        p.estimationBasis !== 'Oficial CBU' ||
+        p.slug === 'banco-credicoop' ||
+        p.slug === 'banco-galicia'
+      );
     }
     return true;
   });

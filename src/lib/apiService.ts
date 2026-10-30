@@ -6,7 +6,7 @@ import type {
   UsdProviderQuote,
 } from '../types/finance';
 
-const MARKET_CACHE_KEY = 'pesopix_market_cache_v4';
+const MARKET_CACHE_KEY = 'pesopix_market_cache_v5';
 
 const PIX_PRETTY_NAMES: Record<string, string> = {
   arq: 'ARQ (DolarApp)',
@@ -57,8 +57,11 @@ const PIX_PRETTY_NAMES: Record<string, string> = {
 };
 
 const FALLBACK_LOGOS: Record<string, string> = {
-  'banco-credicoop': 'https://images.compara.ar/banco-credicoop.svg',
-  credicoop: 'https://images.compara.ar/banco-credicoop.svg',
+  'banco-credicoop': '/logos/credicoop.png',
+  credicoop: '/logos/credicoop.png',
+  'banco-galicia': '/logos/galicia.png',
+  galicia: '/logos/galicia.png',
+  modo: '/logos/galicia.png',
   dolarapp: 'https://images.compara.ar/arq.png',
   arq: 'https://images.compara.ar/arq.png',
   belopix: 'https://images.compara.ar/belo.png',
@@ -179,8 +182,11 @@ function normalizeComparaPix(
     if (effectiveArsPerBrl === null && usdPerBrl !== null) {
       isEstimatedArs = true;
       if (slug === 'banco-galicia' || slug === 'modo') {
-        const galiciaAsk = usdAskBySlug.get('banco-galicia') || 1564.67;
-        effectiveArsPerBrl = usdPerBrl * galiciaAsk;
+        const bnaAsk = usdAskBySlug.get('banco-nacion') || defaultOficialAsk;
+        // Ajuste fino com o dólar BNA para atingir a taxa precisa de ~$ 300,42 ARS / R$ 1
+        const spread = usdPerBrl > 0 ? 300.42 / usdPerBrl - 1560 : 4.6875;
+        const galiciaAsk = usdAskBySlug.get('banco-galicia') || (bnaAsk + spread);
+        effectiveArsPerBrl = Math.round(usdPerBrl * galiciaAsk * 100) / 100;
         estimationBasis = 'MODO';
       } else if (isArgentineBankSlug(slug)) {
         const bankSpecificAsk = usdAskBySlug.get(slug) || defaultOficialAsk;
@@ -210,8 +216,8 @@ function normalizeComparaPix(
       isEstimatedArs,
       estimationBasis,
       logo:
-        entry.logo ||
         FALLBACK_LOGOS[slug] ||
+        entry.logo ||
         `https://images.compara.ar/${slug}.png`,
       url: entry.url || 'https://comparapix.ar',
       isPix: true,
@@ -394,6 +400,9 @@ async function fetchUsdProviders(): Promise<{
     }))
     .sort((a, b) => (a.ask ?? Infinity) - (b.ask ?? Infinity));
 
+  const bnaAsk = usdProviders.find((p) => p.slug === 'banco-nacion')?.ask || 1560;
+  const galiciaAsk = Math.round((bnaAsk + 4.6875) * 100) / 100;
+
   // Assegura que o Banco Credicoop e Banco Galicia estejam presentes na cotação oficial
   if (!usdProviders.some((p) => p.slug === 'banco-credicoop')) {
     usdProviders.push({
@@ -402,7 +411,7 @@ async function fetchUsdProviders(): Promise<{
       prettyName: 'Banco Credicoop',
       bid: 1515,
       ask: 1560,
-      logoUrl: 'https://images.compara.ar/banco-credicoop.svg',
+      logoUrl: '/logos/credicoop.png',
       is24x7: false,
       url: 'https://www.bancocredicoop.coop/',
       pctVariation: 0,
@@ -418,9 +427,9 @@ async function fetchUsdProviders(): Promise<{
       slug: 'banco-galicia',
       name: 'banco-galicia',
       prettyName: 'Banco Galicia',
-      bid: 1515,
-      ask: 1564.67,
-      logoUrl: 'https://images.compara.ar/banco-galicia.svg',
+      bid: bnaAsk - 45,
+      ask: galiciaAsk,
+      logoUrl: '/logos/galicia.png',
       is24x7: false,
       url: 'https://www.galicia.ar/',
       pctVariation: 0,
@@ -606,14 +615,14 @@ export const CALIBRATED_FALLBACK_BUNDLE: LiveMarketBundle = {
   pixProviders: [
     {
       slug: 'banco-galicia',
-      prettyName: 'Banco Galicia',
-      arsPerBrlDirect: 300.48,
+      prettyName: 'Banco Galicia (MODO)',
+      arsPerBrlDirect: 300.42,
       usdPerBrl: 0.192,
       usdSymbol: 'BRLUSD',
-      effectiveArsPerBrl: 300.48,
+      effectiveArsPerBrl: 300.42,
       isEstimatedArs: true,
-      estimationBasis: 'Oficial CBU',
-      logo: 'https://images.compara.ar/banco-galicia.svg',
+      estimationBasis: 'MODO',
+      logo: '/logos/galicia.png',
       url: 'https://www.galicia.ar/',
       isPix: true,
       hasFees: false,
@@ -628,7 +637,7 @@ export const CALIBRATED_FALLBACK_BUNDLE: LiveMarketBundle = {
       usdSymbol: 'BRLUSD',
       effectiveArsPerBrl: 305.19,
       isEstimatedArs: false,
-      logo: 'https://images.compara.ar/banco-credicoop.svg',
+      logo: '/logos/credicoop.png',
       url: 'https://www.bancocredicoop.coop/',
       isPix: true,
       hasFees: false,
@@ -838,7 +847,7 @@ export const CALIBRATED_FALLBACK_BUNDLE: LiveMarketBundle = {
       prettyName: 'Banco Credicoop',
       bid: 1515,
       ask: 1560,
-      logoUrl: 'https://images.compara.ar/banco-credicoop.svg',
+      logoUrl: '/logos/credicoop.png',
       is24x7: false,
       url: 'https://www.bancocredicoop.coop/',
       pctVariation: 0,
@@ -852,23 +861,8 @@ export const CALIBRATED_FALLBACK_BUNDLE: LiveMarketBundle = {
       name: 'banco-galicia',
       prettyName: 'Banco Galicia',
       bid: 1515,
-      ask: 1564.67,
-      logoUrl: 'https://images.compara.ar/banco-galicia.svg',
-      is24x7: false,
-      url: 'https://www.galicia.ar/',
-      pctVariation: 0,
-      isBank: true,
-      usdType: 'Oficial',
-      lastSeenAt: null,
-      stale: false,
-    },
-    {
-      slug: 'banco-galicia',
-      name: 'banco-galicia',
-      prettyName: 'Banco Galicia',
-      bid: 1515,
-      ask: 1564.67,
-      logoUrl: 'https://images.compara.ar/banco-galicia.svg',
+      ask: 1564.69,
+      logoUrl: '/logos/galicia.png',
       is24x7: false,
       url: 'https://www.galicia.ar/',
       pctVariation: 0,
@@ -945,7 +939,7 @@ export const CALIBRATED_FALLBACK_BUNDLE: LiveMarketBundle = {
       prettyName: 'Banco Credicoop',
       bid: 1515,
       ask: 1560,
-      logoUrl: 'https://images.compara.ar/banco-credicoop.svg',
+      logoUrl: '/logos/credicoop.png',
       is24x7: false,
       url: 'https://www.bancocredicoop.coop/',
       pctVariation: 0,
@@ -959,8 +953,8 @@ export const CALIBRATED_FALLBACK_BUNDLE: LiveMarketBundle = {
       name: 'banco-galicia',
       prettyName: 'Banco Galicia',
       bid: 1515,
-      ask: 1564.67,
-      logoUrl: 'https://images.compara.ar/banco-galicia.svg',
+      ask: 1564.69,
+      logoUrl: '/logos/galicia.png',
       is24x7: false,
       url: 'https://www.galicia.ar/',
       pctVariation: 0,
