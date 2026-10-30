@@ -67,6 +67,10 @@ function loadInitialUserState(initialBundle: LiveMarketBundle): PersistedUserSta
         ...(parsed.config || {}),
       };
 
+      if (config.customSpotUsdBrl === 4.9652) {
+        config.customSpotUsdBrl = null;
+      }
+
       const isLegacyDefaultPix =
         !parsed.selectedPixSlug ||
         parsed.selectedPixSlug === 'arq' ||
@@ -76,19 +80,30 @@ function loadInitialUserState(initialBundle: LiveMarketBundle): PersistedUserSta
         ? config.defaultPixSlug || 'banco-galicia'
         : parsed.selectedPixSlug;
 
+      const isLegacyBenchmark = parsed.purchaseBrlInput === '10,64';
+      const purchaseBrl = isLegacyBenchmark
+        ? '100'
+        : parsed.purchaseBrlInput || '100';
+      const isArqManual = isLegacyBenchmark
+        ? false
+        : Boolean(parsed.isArqManual);
+      const bankSlug =
+        parsed.selectedBankSlug === 'manual' && isLegacyBenchmark
+          ? config.defaultBankSlug || defaultBank
+          : parsed.selectedBankSlug || config.defaultBankSlug || defaultBank;
+
       return {
         arqRateInput:
           resolvedPixSlug === 'banco-galicia'
             ? formatArs(galiciaRate)
             : parsed.arqRateInput || formatArs(initialBundle.arqLiveRate ?? 308),
-        isArqManual: Boolean(parsed.isArqManual),
-        selectedBankSlug:
-          parsed.selectedBankSlug || config.defaultBankSlug || defaultBank,
+        isArqManual,
+        selectedBankSlug: bankSlug,
         selectedPixSlug: resolvedPixSlug,
         paymentMode: parsed.paymentMode || 'card',
         inputCurrency: parsed.inputCurrency || 'BRL',
         manualOficialInput: parsed.manualOficialInput || '1553',
-        purchaseBrlInput: parsed.purchaseBrlInput || '100',
+        purchaseBrlInput: purchaseBrl,
         usdAmountInput: parsed.usdAmountInput || '20',
         arsBudgetInput: parsed.arsBudgetInput || '30000',
         converterDirection: parsed.converterDirection || 'BRL_TO_ARS',
@@ -377,9 +392,7 @@ export const App: React.FC = () => {
           cotacaoArqNumeric > 0
             ? cotacaoArqNumeric
             : (foundPix?.effectiveArsPerBrl ?? 300.42),
-        activePixName: foundPix
-          ? `${foundPix.prettyName} (manual)`
-          : 'Pix Manual',
+        activePixName: foundPix ? foundPix.prettyName : 'Pix',
       };
     }
 

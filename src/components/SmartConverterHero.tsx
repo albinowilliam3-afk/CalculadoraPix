@@ -6,7 +6,7 @@ import {
   ChevronDown,
   CreditCard,
   Dices,
-  Edit3,
+  Pointer,
   Sparkles,
 } from 'lucide-react';
 import type {
@@ -36,14 +36,14 @@ interface SmartConverterHeroProps {
   purchaseBrlInput: string;
   usdAmountInput: string;
   arsBudgetInput: string;
-  arqRateInput: string;
+  arqRateInput?: string;
   isArqManual: boolean;
   cotacaoArqNumeric: number;
   oficialBanks: UsdProviderQuote[];
   pixProviders: PixProviderNormalized[];
   selectedBankSlug: string | 'manual';
   selectedPixSlug: string;
-  manualOficialInput: string;
+  manualOficialInput?: string;
   activeOficialRate: number;
   activeBankName: string;
   activePixProvider: PixProviderNormalized | null;
@@ -58,11 +58,11 @@ interface SmartConverterHeroProps {
   onPurchaseBrlChange: (val: string, isInstantPreset?: boolean) => void;
   onUsdAmountChange: (val: string, isInstantPreset?: boolean) => void;
   onArsBudgetChange: (val: string) => void;
-  onArqInputChange: (val: string) => void;
-  onResetArqToLive: () => void;
+  onArqInputChange?: (val: string) => void;
+  onResetArqToLive?: () => void;
   onSelectBank: (slug: string | 'manual') => void;
   onSelectPixProvider: (slug: string) => void;
-  onManualOficialChange: (val: string) => void;
+  onManualOficialChange?: (val: string) => void;
   onCycleInlinePhrase: () => void;
   onOpenHighSpendModal: () => void;
 }
@@ -114,13 +114,11 @@ export const SmartConverterHero: React.FC<SmartConverterHeroProps> = ({
   purchaseBrlInput,
   usdAmountInput,
   arsBudgetInput,
-  arqRateInput,
   isArqManual,
   oficialBanks,
   pixProviders,
   selectedBankSlug,
   selectedPixSlug,
-  manualOficialInput,
   activeOficialRate,
   activeBankName,
   activePixProvider,
@@ -135,16 +133,12 @@ export const SmartConverterHero: React.FC<SmartConverterHeroProps> = ({
   onPurchaseBrlChange,
   onUsdAmountChange,
   onArsBudgetChange,
-  onArqInputChange,
-  onResetArqToLive,
   onSelectBank,
   onSelectPixProvider,
-  onManualOficialChange,
   onCycleInlinePhrase,
   onOpenHighSpendModal,
 }) => {
   const [showCardDetails, setShowCardDetails] = useState(false);
-  const [showManualDrawer, setShowManualDrawer] = useState(false);
   const cardHeadingRef = useRef<HTMLDivElement>(null);
 
   const isCardMode = paymentMode === 'card';
@@ -206,10 +200,10 @@ export const SmartConverterHero: React.FC<SmartConverterHeroProps> = ({
 
   const totalPixArs = effectiveBrlForPix * activePixRate;
 
-  // Diferença em Pesos (positivo = Cartão mais barato que Pix)
-  const diffPixMinusCardArs = totalPixArs - totalCardArs;
-  const diffPctCardVsPix =
-    totalPixArs > 0 ? ((totalCardArs - totalPixArs) / totalPixArs) * 100 : 0;
+  // Diferença absoluta e percentual em Pesos entre Cartão e Pix
+  const diffArsAbs = Math.abs(totalCardArs - totalPixArs);
+  const baseArs = Math.min(totalCardArs, totalPixArs);
+  const diffPctArs = baseArs > 0 ? (diffArsAbs / baseArs) * 100 : 0;
 
   // Totais reversos em Reais (quando digitando orçamento em Pesos ARS)
   const reverseBrlOnCard =
@@ -221,8 +215,15 @@ export const SmartConverterHero: React.FC<SmartConverterHeroProps> = ({
   const reverseDiffPct =
     baseReverseBrl > 0 ? (Math.abs(reverseDiffBrl) / baseReverseBrl) * 100 : 0;
 
-  const cardSaves = isArsInput ? reverseDiffBrl <= 0 : diffPixMinusCardArs >= 0;
-  const pixSaves = isArsInput ? reverseDiffBrl >= 0 : diffPixMinusCardArs <= 0;
+  // Comparação de vantagem (Economiza vs Perde):
+  // Se input em Pesos (ARS): gasta MENOS Reais quem tem menor reverseBrl (vantagem para quem gasta menos)
+  // Se input em Reais (BRL) ou Dólar (USD): rende MAIS Pesos quem tem maior totalArs (vantagem para quem entrega mais)
+  const cardSaves = isArsInput
+    ? reverseBrlOnCard <= reverseBrlOnPix
+    : totalCardArs >= totalPixArs;
+  const pixSaves = isArsInput
+    ? reverseBrlOnPix < reverseBrlOnCard
+    : totalPixArs > totalCardArs;
 
   // Número principal exibido gigante dentro do cartão (Roxo ou Verde)
   const primaryDisplayFormatted = isArsInput
@@ -598,12 +599,12 @@ export const SmartConverterHero: React.FC<SmartConverterHeroProps> = ({
           </div>
 
           {/* Barra Comparativa Direta em Linguagem Simples (Cartão vs Pix) */}
-          <div className="relative z-10 mt-4 flex flex-wrap items-center justify-between gap-2 rounded-2xl bg-black/18 px-3.5 py-2.5 border border-white/15 backdrop-blur-md text-xs">
+          <div className="relative z-10 mt-4 flex items-center justify-between gap-2 rounded-2xl bg-black/18 px-3.5 py-2.5 border border-white/15 backdrop-blur-md text-xs">
             {isCardMode ? (
               <>
-                <div className="text-white/90 tabular-nums">
+                <div className="min-w-0 truncate text-white/90 tabular-nums">
                   <span>
-                    No Pix ({activePixName.replace('ARQ (DolarApp)', 'ARQ / DolarApp')}):{' '}
+                    No Pix ({activePixName.replace(/\s*\(manual\)\)?/gi, '').replace(/\s*\(MODO\)\)?/gi, '').replace('ARQ (DolarApp)', 'ARQ')}):{' '}
                   </span>
                   <strong className="font-extrabold text-white">
                     {isArsInput
@@ -613,7 +614,7 @@ export const SmartConverterHero: React.FC<SmartConverterHeroProps> = ({
                 </div>
 
                 <div
-                  className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 font-extrabold tabular-nums shadow-sm transition animate-pulse ${
+                  className={`shrink-0 inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] sm:text-xs font-extrabold tabular-nums shadow-sm transition animate-pulse ${
                     cardSaves
                       ? 'bg-emerald-500/80 text-white border border-emerald-300/40'
                       : 'bg-rose-500/85 text-white border border-rose-300/50'
@@ -621,27 +622,25 @@ export const SmartConverterHero: React.FC<SmartConverterHeroProps> = ({
                 >
                   {isArsInput ? (
                     cardSaves ? (
-                      <>Economiza R$ {formatBrl(Math.abs(reverseDiffBrl))} (-{formatPct(reverseDiffPct, 1)})</>
+                      <>Cartão economiza R$ {formatBrl(Math.abs(reverseDiffBrl))} (-{formatPct(reverseDiffPct, 1)})</>
                     ) : (
-                      <>Perde R$ {formatBrl(Math.abs(reverseDiffBrl))} (+{formatPct(reverseDiffPct, 1)})</>
+                      <>Cartão perde R$ {formatBrl(Math.abs(reverseDiffBrl))} (+{formatPct(reverseDiffPct, 1)})</>
                     )
                   ) : cardSaves ? (
                     <>
-                      Economiza $ {formatArs(Math.abs(diffPixMinusCardArs), 0)} (
-                      {formatPct(diffPctCardVsPix, 1)})
+                      Cartão economiza $ {formatArs(diffArsAbs, 0)} (-{formatPct(diffPctArs, 1)})
                     </>
                   ) : (
                     <>
-                      Perde $ {formatArs(Math.abs(diffPixMinusCardArs), 0)} (+
-                      {formatPct(Math.abs(diffPctCardVsPix), 1)})
+                      Cartão perde $ {formatArs(diffArsAbs, 0)} (+{formatPct(diffPctArs, 1)})
                     </>
                   )}
                 </div>
               </>
             ) : (
               <>
-                <div className="text-white/90 tabular-nums">
-                  <span>No cartão ({activeBankName}): </span>
+                <div className="min-w-0 truncate text-white/90 tabular-nums">
+                  <span>No cartão ({activeBankName.replace(/\s*\(manual\)\)?/gi, '')}): </span>
                   <strong className="font-extrabold text-white">
                     {isArsInput
                       ? `R$ ${formatBrl(reverseBrlOnCard)}`
@@ -652,7 +651,7 @@ export const SmartConverterHero: React.FC<SmartConverterHeroProps> = ({
                 <button
                   type="button"
                   onClick={() => switchPaymentModeSmooth('card')}
-                  className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 font-extrabold tabular-nums shadow-sm transition active:scale-95 animate-pulse ${
+                  className={`shrink-0 inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] sm:text-xs font-extrabold tabular-nums shadow-sm transition active:scale-95 animate-pulse ${
                     pixSaves
                       ? 'bg-emerald-500/80 text-white border border-emerald-300/40'
                       : 'bg-rose-500/85 text-white border border-rose-300/50'
@@ -662,17 +661,15 @@ export const SmartConverterHero: React.FC<SmartConverterHeroProps> = ({
                     pixSaves ? (
                       <>Pix economiza R$ {formatBrl(Math.abs(reverseDiffBrl))} (-{formatPct(reverseDiffPct, 1)})</>
                     ) : (
-                      <>Cartão economiza R$ {formatBrl(Math.abs(reverseDiffBrl))} (-{formatPct(reverseDiffPct, 1)})</>
+                      <>Pix perde R$ {formatBrl(Math.abs(reverseDiffBrl))} (+{formatPct(reverseDiffPct, 1)})</>
                     )
                   ) : pixSaves ? (
                     <>
-                      Pix economiza $ {formatArs(Math.abs(diffPixMinusCardArs), 0)} (
-                      {formatPct(Math.abs(diffPctCardVsPix), 1)})
+                      Pix economiza $ {formatArs(diffArsAbs, 0)} (-{formatPct(diffPctArs, 1)})
                     </>
                   ) : (
                     <>
-                      Cartão economiza $ {formatArs(Math.abs(diffPixMinusCardArs), 0)} (
-                      {formatPct(diffPctCardVsPix, 1)})
+                      Pix perde $ {formatArs(diffArsAbs, 0)} (+{formatPct(diffPctArs, 1)})
                     </>
                   )}
                 </button>
@@ -758,16 +755,13 @@ export const SmartConverterHero: React.FC<SmartConverterHeroProps> = ({
               </p>
             </div>
 
-            <button
-              type="button"
-              onClick={() => setShowManualDrawer((v) => !v)}
-              aria-expanded={showManualDrawer}
-              aria-controls="manual-rate-drawer"
-              className="bank-subtle shrink-0 inline-flex items-center gap-1 rounded-xl px-2.5 py-1.5 text-[11px] font-bold text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition"
+            <div
+              aria-hidden="true"
+              className="shrink-0 flex h-8 w-8 items-center justify-center rounded-xl bg-[#5664F5]/10 text-[var(--brand-primary)] select-none shadow-xs"
+              title="Toque na lista para selecionar"
             >
-              <Edit3 className="h-3 w-3" />
-              <span>Manual</span>
-            </button>
+              <Pointer className="h-4 w-4 -rotate-12" />
+            </div>
           </div>
 
           {/* LISTA COM SCROLL COMPACTO (NÃO ESTICA NEM QUEBRA A PÁGINA!) */}
@@ -926,84 +920,6 @@ export const SmartConverterHero: React.FC<SmartConverterHeroProps> = ({
                   );
                 })}
           </div>
-
-          {/* Gaveta opcional caso queira digitar cotação manual */}
-          {showManualDrawer && (
-            <div
-              id="manual-rate-drawer"
-              className="bank-subtle mt-3 space-y-3 rounded-2xl p-3.5"
-            >
-              {isCardMode ? (
-                <div>
-                  <label
-                    htmlFor="manual-oficial-input"
-                    className="mb-1 block text-xs font-bold text-[var(--text-primary)]"
-                  >
-                    Digitar Dólar Oficial manual (ARS por US$ 1)
-                  </label>
-                  <div className="flex items-center gap-2">
-                    <input
-                      id="manual-oficial-input"
-                      name="manualOficial"
-                      type="text"
-                      inputMode="decimal"
-                      enterKeyHint="done"
-                      autoComplete="off"
-                      autoCorrect="off"
-                      autoCapitalize="off"
-                      spellCheck={false}
-                      value={manualOficialInput}
-                      onChange={(e) => onManualOficialChange(e.target.value)}
-                      placeholder="1553"
-                      className="bank-input w-full rounded-xl px-3 py-2 text-sm font-bold text-[var(--text-primary)] tabular-nums focus:outline-none"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => onSelectBank('uala')}
-                      className="bank-surface shrink-0 rounded-xl px-3 py-2 text-xs font-bold text-[var(--brand-primary)] active:scale-95"
-                    >
-                      Usar Ualá
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <div>
-                  <label
-                    htmlFor="arq-rate-input"
-                    className="mb-1 block text-xs font-bold text-[var(--text-primary)]"
-                  >
-                    Digitar cotação Pix manual (ARS por R$ 1)
-                  </label>
-                  <div className="flex items-center gap-2">
-                    <input
-                      id="arq-rate-input"
-                      name="arqRate"
-                      type="text"
-                      inputMode="decimal"
-                      enterKeyHint="done"
-                      autoComplete="off"
-                      autoCorrect="off"
-                      autoCapitalize="off"
-                      spellCheck={false}
-                      value={arqRateInput}
-                      onChange={(e) => onArqInputChange(e.target.value)}
-                      placeholder="307,00"
-                      className="bank-input w-full rounded-xl px-3 py-2 text-sm font-bold text-[var(--text-primary)] tabular-nums focus:outline-none"
-                    />
-                    {isArqManual && (
-                      <button
-                        type="button"
-                        onClick={onResetArqToLive}
-                        className="bank-surface shrink-0 rounded-xl px-3 py-2 text-xs font-bold text-emerald-600 dark:text-emerald-400 active:scale-95"
-                      >
-                        Auto ARQ
-                      </button>
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
         </div>
 
         {/* =================================================================

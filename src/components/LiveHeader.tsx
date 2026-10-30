@@ -97,8 +97,8 @@ export const LiveHeader: React.FC<LiveHeaderProps> = ({
               <h1 className="truncate text-[17px] font-extrabold tracking-tight text-[var(--text-primary)] leading-tight">
                 PesoPix
               </h1>
-              <span className="rounded-md bg-[#5664F5]/14 px-1.5 py-0.5 text-[9px] font-extrabold uppercase tracking-wider text-[var(--brand-primary)]">
-                Calc
+              <span className="rounded-lg bg-[#5664F5]/12 px-2 py-0.5 text-[10px] font-extrabold tracking-tight text-[var(--brand-primary)]">
+                Calculadora
               </span>
             </div>
 
