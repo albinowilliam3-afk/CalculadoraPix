@@ -75,15 +75,15 @@ export const LiveHeader: React.FC<LiveHeaderProps> = ({
             className="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl active:scale-95 transition-transform"
           >
             <img
-              src="/app-icon.png"
-              alt=""
+              src="/web-icon.png"
+              alt="Logo PesoPix"
               width={44}
               height={44}
-              className="h-11 w-11 object-contain drop-shadow-sm"
+              className="h-11 w-11 object-contain drop-shadow-sm rounded-xl"
             />
             {davidGuardEnabled && (
               <span
-                className="absolute -bottom-0.5 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-emerald-500 ring-2 ring-[var(--bg-app)] text-[8px] font-bold text-white"
+                className="absolute -bottom-0.5 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-emerald-500 ring-2 ring-[var(--bg-app)] text-[8px] font-bold text-white shadow-sm"
                 title="De olho nos gastos do David"
               >
                 👀

@@ -1,0 +1,83 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <defs>
+    <!-- Neobank Signature Gradients matching PesoPix palette -->
+    <linearGradient id="bgGradient" x1="64" y1="48" x2="448" y2="464" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#4F46E5" />
+      <stop offset="42%" stop-color="#5664F5" />
+      <stop offset="85%" stop-color="#7C3AED" />
+      <stop offset="100%" stop-color="#8B5CF6" />
+    </linearGradient>
+
+    <linearGradient id="innerGlow" x1="120" y1="80" x2="392" y2="432" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.28" />
+      <stop offset="50%" stop-color="#FFFFFF" stop-opacity="0.04" />
+      <stop offset="100%" stop-color="#000000" stop-opacity="0.18" />
+    </linearGradient>
+
+    <linearGradient id="pixEmerald" x1="190" y1="190" x2="322" y2="322" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#34D399" />
+      <stop offset="45%" stop-color="#10B981" />
+      <stop offset="100%" stop-color="#059669" />
+    </linearGradient>
+
+    <linearGradient id="arrowGradient" x1="160" y1="160" x2="352" y2="352" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FFFFFF" />
+      <stop offset="100%" stop-color="#F1F5F9" />
+    </linearGradient>
+
+    <!-- Drop Shadows -->
+    <filter id="shadowSquircle" x="0" y="8" width="512" height="504" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="18" stdDeviation="22" flood-color="#4338CA" flood-opacity="0.38" />
+      <feDropShadow dx="0" dy="6" stdDeviation="10" flood-color="#0F172A" flood-opacity="0.22" />
+    </filter>
+
+    <filter id="glyphShadow" x="110" y="110" width="292" height="292" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#1E1B4B" flood-opacity="0.32" />
+    </filter>
+
+    <filter id="pixGlowShadow" x="180" y="180" width="152" height="152" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="4" stdDeviation="8" flood-color="#059669" flood-opacity="0.45" />
+    </filter>
+  </defs>
+
+  <!-- Base Neobank Rounded Squircle -->
+  <g filter="url(#shadowSquircle)">
+    <rect x="44" y="44" width="424" height="424" rx="108" fill="url(#bgGradient)" />
+    <!-- Inner Rim Stroke for tactile glass finish -->
+    <rect x="45.5" y="45.5" width="421" height="421" rx="106.5" stroke="url(#innerGlow)" stroke-width="3" />
+  </g>
+
+  <!-- Ambient Top Sheen -->
+  <path d="M44 152 C44 92.5 92.5 44 152 44 L360 44 C419.5 44 468 92.5 468 152 C468 160 380 185 256 185 C132 185 44 160 44 152 Z" fill="#FFFFFF" opacity="0.08" />
+
+  <!-- Center Fintech Iconography (Pix Diamond + Smooth Exchange Curves) -->
+  <g filter="url(#glyphShadow)">
+    <!-- Top Exchange Pill & Arrow (Left to Right) -->
+    <g fill="url(#arrowGradient)">
+      <path d="M156 188 C156 177 165 168 176 168 L308 168 C319 168 328 177 328 188 C328 199 319 208 308 208 L176 208 C165 208 156 199 156 188 Z" />
+      <!-- Arrow Head Right -->
+      <path d="M298 152 C302 148 308 148 312 152 L350 184 C354 187 354 193 350 196 L312 228 C308 232 302 232 298 228 C294 224 294 218 298 214 L326 190 L298 166 C294 162 294 156 298 152 Z" />
+    </g>
+
+    <!-- Bottom Exchange Pill & Arrow (Right to Left) -->
+    <g fill="url(#arrowGradient)">
+      <path d="M356 324 C356 335 347 344 336 344 L204 344 C193 344 184 335 184 324 C184 313 193 304 204 304 L336 304 C347 304 356 313 356 324 Z" />
+      <!-- Arrow Head Left -->
+      <path d="M214 360 C210 364 204 364 200 360 L162 328 C158 325 158 319 162 316 L200 284 C204 280 210 280 214 284 C218 288 218 294 214 298 L186 322 L214 346 C218 350 218 356 214 360 Z" />
+    </g>
+  </g>
+
+  <!-- Central Pix Emerald Diamond (Harmonizing Pix + Peso/Card Exchange) -->
+  <g filter="url(#pixGlowShadow)">
+    <rect x="220" y="220" width="72" height="72" rx="16" transform="rotate(45 256 256)" fill="url(#pixEmerald)" />
+    <!-- Inner White Core of Pix Diamond -->
+    <rect x="238" y="238" width="36" height="36" rx="8" transform="rotate(45 256 256)" fill="#FFFFFF" opacity="0.95" />
+    <circle cx="256" cy="256" r="6" fill="#10B981" />
+  </g>
+
+  <!-- Subtle Micro Dots (Virtual Card Feel) -->
+  <circle cx="120" cy="120" r="5" fill="#FFFFFF" opacity="0.3" />
+  <circle cx="140" cy="120" r="5" fill="#FFFFFF" opacity="0.3" />
+  <circle cx="160" cy="120" r="5" fill="#FFFFFF" opacity="0.3" />
+  <circle cx="180" cy="120" r="5" fill="#FFFFFF" opacity="0.3" />
+</svg>
