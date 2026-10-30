@@ -835,7 +835,7 @@ export const SmartConverterHero: React.FC<SmartConverterHeroProps> = ({
               : top5PixWallets.map((wallet) => {
                   const wRate = wallet.effectiveArsPerBrl || 0;
                   const isSelected = !isArqManual && selectedPixSlug === wallet.slug;
-                  const isArq = wallet.slug === 'arq';
+                  const isDefaultPix = wallet.slug === 'banco-galicia';
                   const walletsOnly = pixProviders.filter(
                     (p) => p.estimationBasis !== 'Oficial CBU'
                   );
@@ -878,7 +878,7 @@ export const SmartConverterHero: React.FC<SmartConverterHeroProps> = ({
                             <span className="truncate text-xs font-extrabold text-[var(--text-primary)]">
                               {wallet.prettyName}
                             </span>
-                            {isArq && (
+                            {isDefaultPix && (
                               <span className="rounded bg-emerald-500/15 px-1.5 py-0.5 text-[9px] font-extrabold text-emerald-600 dark:text-emerald-400">
                                 PADRÃO
                               </span>

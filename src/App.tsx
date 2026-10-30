@@ -64,7 +64,10 @@ function loadInitialUserState(initialBundle: LiveMarketBundle): PersistedUserSta
           parsed.arqRateInput || formatArs(initialBundle.arqLiveRate ?? 308),
         isArqManual: Boolean(parsed.isArqManual),
         selectedBankSlug: parsed.selectedBankSlug || defaultBank,
-        selectedPixSlug: parsed.selectedPixSlug || 'arq',
+        selectedPixSlug:
+          !parsed.selectedPixSlug || parsed.selectedPixSlug === 'arq'
+            ? 'banco-galicia'
+            : parsed.selectedPixSlug,
         paymentMode: parsed.paymentMode || 'card',
         inputCurrency: parsed.inputCurrency || 'BRL',
         manualOficialInput: parsed.manualOficialInput || '1553',
@@ -86,7 +89,7 @@ function loadInitialUserState(initialBundle: LiveMarketBundle): PersistedUserSta
     arqRateInput: formatArs(initialBundle.arqLiveRate ?? 308),
     isArqManual: false,
     selectedBankSlug: defaultBank,
-    selectedPixSlug: 'arq',
+    selectedPixSlug: 'banco-galicia',
     paymentMode: 'card',
     inputCurrency: 'BRL',
     manualOficialInput: '1553',
@@ -231,7 +234,7 @@ export const App: React.FC = () => {
 
         setUserState((prev) => {
           let nextArqInput = prev.arqRateInput;
-          const activePixSlug = prev.selectedPixSlug || 'arq';
+          const activePixSlug = prev.selectedPixSlug || 'banco-galicia';
           const matchedPix = fresh.pixProviders.find((p) => p.slug === activePixSlug);
 
           if (!prev.isArqManual) {
@@ -307,7 +310,7 @@ export const App: React.FC = () => {
 
   const paymentMode: PaymentMode = userState.paymentMode || 'card';
   const inputCurrency: InputCurrencyMode = userState.inputCurrency || 'BRL';
-  const selectedPixSlug = userState.selectedPixSlug || 'arq';
+  const selectedPixSlug = userState.selectedPixSlug || 'banco-galicia';
 
   const { activeOficialRate, activeBankName } = useMemo(() => {
     if (userState.selectedBankSlug === 'manual') {
@@ -349,7 +352,7 @@ export const App: React.FC = () => {
   const { activePixProvider, activePixRate, activePixName } = useMemo(() => {
     const foundPix =
       market.pixProviders.find((p) => p.slug === selectedPixSlug) ||
-      market.pixProviders.find((p) => p.slug === 'arq') ||
+      market.pixProviders.find((p) => p.slug === 'banco-galicia') ||
       market.pixProviders[0] ||
       null;
 
@@ -359,7 +362,7 @@ export const App: React.FC = () => {
         activePixRate:
           cotacaoArqNumeric > 0
             ? cotacaoArqNumeric
-            : (foundPix?.effectiveArsPerBrl ?? market.arqLiveRate ?? 308),
+            : (foundPix?.effectiveArsPerBrl ?? 300.42),
         activePixName: foundPix
           ? `${foundPix.prettyName} (manual)`
           : 'Pix Manual',
@@ -374,11 +377,11 @@ export const App: React.FC = () => {
       };
     }
 
+    const defaultGalicia = market.pixProviders.find((p) => p.slug === 'banco-galicia');
     return {
-      activePixProvider: null,
-      activePixRate:
-        cotacaoArqNumeric > 0 ? cotacaoArqNumeric : (market.arqLiveRate ?? 308),
-      activePixName: 'ARQ (DolarApp)',
+      activePixProvider: defaultGalicia || null,
+      activePixRate: defaultGalicia?.effectiveArsPerBrl ?? 300.42,
+      activePixName: defaultGalicia?.prettyName ?? 'Banco Galicia (MODO)',
     };
   }, [
     cotacaoArqNumeric,
@@ -572,7 +575,7 @@ export const App: React.FC = () => {
       arqRateInput: formatArs(liveArq),
       isArqManual: false,
       selectedBankSlug: defaultBank,
-      selectedPixSlug: 'arq',
+      selectedPixSlug: 'banco-galicia',
       purchaseBrlInput: '100',
       usdAmountInput: '20',
       arsBudgetInput: '30000',
@@ -581,7 +584,7 @@ export const App: React.FC = () => {
         davidGuardEnabled: prev.config.davidGuardEnabled,
       },
     }));
-    showToast('⚡ Padrão Ualá + ARQ (ao vivo) restaurado!');
+    showToast('⚡ Padrão Ualá + Banco Galicia (ao vivo) restaurado!');
   };
 
   const handleSecretTripleTap = () => {
@@ -720,18 +723,18 @@ export const App: React.FC = () => {
             }))
           }
           onResetArqToLive={() => {
-            const arqProvider =
-              market.pixProviders.find((p) => p.slug === 'arq') ||
+            const galiciaProvider =
+              market.pixProviders.find((p) => p.slug === 'banco-galicia') ||
               market.pixProviders[0];
-            const liveRate = arqProvider?.effectiveArsPerBrl ?? market.arqLiveRate;
+            const liveRate = galiciaProvider?.effectiveArsPerBrl ?? 300.42;
             if (!liveRate) return;
             setUserState((prev) => ({
               ...prev,
-              selectedPixSlug: 'arq',
+              selectedPixSlug: 'banco-galicia',
               arqRateInput: formatArs(liveRate),
               isArqManual: false,
             }));
-            showToast(`Cotação ARQ ao vivo restaurada: $${formatArs(liveRate)}`);
+            showToast(`Cotação Banco Galicia (MODO) ao vivo restaurada: $${formatArs(liveRate)}`);
           }}
           onSelectBank={(slug) =>
             setUserState((prev) => ({
