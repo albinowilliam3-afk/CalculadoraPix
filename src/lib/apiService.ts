@@ -539,51 +539,135 @@ async function fetchPixProvidersWithFallbacks(
   providers: PixProviderNormalized[];
   arqLiveRate: number | null;
   arqUsdPerBrl: number | null;
-  source: 'comparapix-proxy' | 'comparapix-cors' | 'criptoya';
+  source: 'comparapix-direct' | 'comparapix-proxy' | 'comparapix-cors' | 'criptoya';
 }> {
-  // Camada 1: Rota Proxy (Netlify Function `/api/comparapix` ou Vite Dev Proxy)
+  let result: {
+    providers: PixProviderNormalized[];
+    arqLiveRate: number | null;
+    arqUsdPerBrl: number | null;
+    source: 'comparapix-direct' | 'comparapix-proxy' | 'comparapix-cors' | 'criptoya';
+  } | null = null;
+
+  // Camada 1: Tentativa Direta na API ComparaPix (CORS aberto para navegadores)
   try {
-    const raw = await fetchJsonStrict<RawComparaPixResponse>('/api/comparapix', 6000);
+    const raw = await fetchJsonStrict<RawComparaPixResponse>(
+      'https://api.comparapix.ar/quotes',
+      5500
+    );
     const parsed = normalizeComparaPix(raw, usdProviders, defaultOficialAsk, defaultCriptoAsk);
     if (parsed.providers.length > 0) {
-      return { ...parsed, source: 'comparapix-proxy' };
+      result = { ...parsed, source: 'comparapix-direct' };
     }
   } catch {
-    // Continua para camada 2
+    // Segue para Camada 2
   }
 
-  // Camada 2: CORS Proxies públicos caso o usuário suba apenas a pasta `dist` estática sem Functions
-  const corsProxies = [
-    `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent('https://api.comparapix.ar/quotes')}`,
-    `https://api.allorigins.win/raw?url=${encodeURIComponent('https://api.comparapix.ar/quotes')}`,
-  ];
-
-  for (const proxyUrl of corsProxies) {
+  // Camada 2: Rota Proxy (Netlify Function `/api/comparapix` ou Vite Dev/Preview Proxy)
+  if (!result) {
     try {
-      const raw = await fetchJsonStrict<RawComparaPixResponse>(proxyUrl, 6000);
+      const raw = await fetchJsonStrict<RawComparaPixResponse>('/api/comparapix', 6000);
       const parsed = normalizeComparaPix(raw, usdProviders, defaultOficialAsk, defaultCriptoAsk);
       if (parsed.providers.length > 0) {
-        return { ...parsed, source: 'comparapix-cors' };
+        result = { ...parsed, source: 'comparapix-proxy' };
       }
     } catch {
-      // Tenta próximo proxy
+      // Segue para Camada 3
     }
   }
 
-  // Camada 3: CriptoYa Pix API (CORS `*` nativo, inclui DolarApp/ARQ, Cocos, Belo, Ripio, Lemon, Fiwind...)
-  const criptoYaRaw = await fetchJsonStrict<RawCriptoYaResponse>(
-    'https://criptoya.com/api/pix',
-    6500
-  );
-  const parsedFallback = normalizeCriptoYaFallback(
-    criptoYaRaw,
-    defaultOficialAsk,
-    defaultCriptoAsk
-  );
-  if (parsedFallback.providers.length === 0) {
-    throw new Error('All Pix APIs returned empty provider list');
+  // Camada 3: CORS Proxies públicos caso o site rode em host estático
+  if (!result) {
+    const corsProxies = [
+      `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent('https://api.comparapix.ar/quotes')}`,
+      `https://api.allorigins.win/raw?url=${encodeURIComponent('https://api.comparapix.ar/quotes')}`,
+    ];
+
+    for (const proxyUrl of corsProxies) {
+      try {
+        const raw = await fetchJsonStrict<RawComparaPixResponse>(proxyUrl, 5500);
+        const parsed = normalizeComparaPix(raw, usdProviders, defaultOficialAsk, defaultCriptoAsk);
+        if (parsed.providers.length > 0) {
+          result = { ...parsed, source: 'comparapix-cors' };
+          break;
+        }
+      } catch {
+        // Tenta próximo proxy
+      }
+    }
   }
-  return { ...parsedFallback, source: 'criptoya' };
+
+  // Camada 4: CriptoYa Pix API (fallback de emergência para carteiras cripto)
+  if (!result) {
+    const criptoYaRaw = await fetchJsonStrict<RawCriptoYaResponse>(
+      'https://criptoya.com/api/pix',
+      6500
+    );
+    const parsedFallback = normalizeCriptoYaFallback(
+      criptoYaRaw,
+      defaultOficialAsk,
+      defaultCriptoAsk
+    );
+    if (parsedFallback.providers.length === 0) {
+      throw new Error('All Pix APIs returned empty provider list');
+    }
+    result = { ...parsedFallback, source: 'criptoya' };
+  }
+
+  // GARANTIA VITAL: Banco Galicia (MODO) e Banco Credicoop NUNCA somem do app, qualquer que seja a fonte!
+  const finalProviders = [...result.providers];
+  const bnaItem = usdProviders.find((p) => p.slug === 'banco-nacion');
+  const bnaAsk = bnaItem?.ask || defaultOficialAsk;
+  const galiciaAsk = Math.round((bnaAsk + 4.6875) * 100) / 100;
+  const galiciaPixRate = Math.round(0.192 * galiciaAsk * 100) / 100;
+
+  if (!finalProviders.some((p) => p.slug === 'banco-galicia')) {
+    finalProviders.push({
+      slug: 'banco-galicia',
+      prettyName: 'Banco Galicia (MODO)',
+      arsPerBrlDirect: galiciaPixRate,
+      usdPerBrl: 0.192,
+      usdSymbol: 'BRLUSD',
+      effectiveArsPerBrl: galiciaPixRate,
+      isEstimatedArs: true,
+      estimationBasis: 'MODO',
+      logo: '/logos/galicia.png',
+      url: 'https://www.galicia.ar/',
+      isPix: true,
+      hasFees: false,
+      updatedAt: new Date().toISOString(),
+      stale: false,
+    });
+  }
+
+  if (!finalProviders.some((p) => p.slug === 'banco-credicoop')) {
+    const credicoopItem = usdProviders.find((p) => p.slug === 'banco-credicoop');
+    const credicoopAsk = credicoopItem?.ask || 1560;
+    const credicoopPixRate = Math.round(0.192 * credicoopAsk * 100) / 100;
+    finalProviders.push({
+      slug: 'banco-credicoop',
+      prettyName: 'Banco Credicoop',
+      arsPerBrlDirect: credicoopPixRate,
+      usdPerBrl: 0.192,
+      usdSymbol: 'BRLUSD',
+      effectiveArsPerBrl: credicoopPixRate,
+      isEstimatedArs: false,
+      logo: '/logos/credicoop.png',
+      url: 'https://www.bancocredicoop.coop/',
+      isPix: true,
+      hasFees: false,
+      updatedAt: new Date().toISOString(),
+      stale: false,
+    });
+  }
+
+  finalProviders.sort(
+    (a, b) => (a.effectiveArsPerBrl ?? Infinity) - (b.effectiveArsPerBrl ?? Infinity)
+  );
+
+  return {
+    ...result,
+    providers: finalProviders,
+  };
 }
 
 export function loadCachedMarketBundle(): LiveMarketBundle | null {

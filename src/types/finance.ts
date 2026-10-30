@@ -61,7 +61,7 @@ export interface LiveMarketBundle {
   oficialBanks: UsdProviderQuote[];
   spotUsdBrl: SpotUsdBrlQuote;
   fetchedAt: string;
-  pixSource: 'comparapix-proxy' | 'comparapix-cors' | 'criptoya' | 'cache';
+  pixSource: 'comparapix-direct' | 'comparapix-proxy' | 'comparapix-cors' | 'criptoya' | 'cache';
   usdSource: 'comparadolar' | 'comparadolar-proxy' | 'cache';
   isFromCache: boolean;
 }

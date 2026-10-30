@@ -519,7 +519,11 @@ export const App: React.FC = () => {
   ]);
 
   const pixSourceLabel = useMemo(() => {
-    if (market.pixSource === 'comparapix-proxy' || market.pixSource === 'comparapix-cors') {
+    if (
+      market.pixSource === 'comparapix-direct' ||
+      market.pixSource === 'comparapix-proxy' ||
+      market.pixSource === 'comparapix-cors'
+    ) {
       return 'ComparaPix + ComparaDólar';
     }
     if (market.pixSource === 'criptoya') {

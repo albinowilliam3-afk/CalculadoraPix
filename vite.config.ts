@@ -118,4 +118,27 @@ export default defineConfig({
       },
     },
   },
+  preview: {
+    proxy: {
+      '/api/comparapix': {
+        target: 'https://api.comparapix.ar',
+        changeOrigin: true,
+        rewrite: () => '/quotes',
+        headers: {
+          Origin: 'https://comparapix.ar',
+          Referer: 'https://comparapix.ar/',
+        },
+      },
+      '/api/comparadolar': {
+        target: 'https://api.comparadolar.ar',
+        changeOrigin: true,
+        rewrite: () => '/usd',
+      },
+      '/api/usdbrl': {
+        target: 'https://economia.awesomeapi.com.br',
+        changeOrigin: true,
+        rewrite: () => '/json/last/USD-BRL',
+      },
+    },
+  },
 });
