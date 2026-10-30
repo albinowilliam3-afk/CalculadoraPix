@@ -1,6 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  Beaker,
   Building2,
   Monitor,
   Moon,
@@ -31,7 +30,6 @@ interface SettingsDialogProps {
   onChangeThemePreference: (pref: ThemePreference) => void;
   onClose: () => void;
   onUpdateConfig: (next: CalculatorConfig) => void;
-  onLoadEmpiricalBenchmark: () => void;
   onRestoreLiveDefaults: () => void;
 }
 
@@ -46,7 +44,6 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
   onChangeThemePreference,
   onClose,
   onUpdateConfig,
-  onLoadEmpiricalBenchmark,
   onRestoreLiveDefaults,
 }) => {
   const dialogRef = useRef<HTMLDialogElement>(null);
@@ -276,7 +273,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
               Spread Interbancário da Bandeira Visa/Master (%)
             </label>
             <p className="mt-0.5 text-[11px] text-[var(--text-muted)]">
-              Validado em <strong>0,79%</strong> na compra real de R$ 10,64 → US$ 2,16.
+              Margem média das bandeiras Visa e Mastercard (padrão recomendado: <strong>0,79%</strong>).
             </p>
 
             <div className="mt-2.5 flex items-center gap-2">
@@ -387,35 +384,18 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
           </div>
 
           {/* 4. Ações Rápidas */}
-          <div className="space-y-1.5 pt-1">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  onLoadEmpiricalBenchmark();
-                  void handleRequestClose();
-                }}
-                className="flex min-h-[46px] items-center justify-center gap-2 rounded-2xl bg-[#5664F5]/12 px-3 py-2.5 text-xs font-bold text-[var(--brand-primary)] active:scale-95 transition"
-              >
-                <Beaker className="h-4 w-4 shrink-0" />
-                <span>Simular Compra Teste (R$ 10,64)</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  onRestoreLiveDefaults();
-                  void handleRequestClose();
-                }}
-                className="bank-subtle flex min-h-[46px] items-center justify-center gap-2 rounded-2xl px-3 py-2.5 text-xs font-bold text-[var(--text-primary)] active:scale-95 transition"
-              >
-                <RotateCcw className="h-4 w-4 shrink-0" />
-                <span>Restaurar Tudo Ao Vivo</span>
-              </button>
-            </div>
-            <p className="text-[10px] text-[var(--text-muted)] text-center">
-              R$ 10,64 foi o valor da compra real em maquininha argentina usada para calibrar o spread de 0,79% da bandeira.
-            </p>
+          <div className="pt-1">
+            <button
+              type="button"
+              onClick={() => {
+                onRestoreLiveDefaults();
+                void handleRequestClose();
+              }}
+              className="bank-subtle flex min-h-[46px] w-full items-center justify-center gap-2 rounded-2xl px-3 py-2.5 text-xs font-bold text-[var(--text-primary)] active:scale-95 transition"
+            >
+              <RotateCcw className="h-4 w-4 shrink-0 text-[var(--brand-primary)]" />
+              <span>Restaurar Tudo Ao Vivo</span>
+            </button>
           </div>
 
           <button

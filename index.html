@@ -43,6 +43,57 @@
       href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap"
       rel="stylesheet"
     />
+
+    <!-- Netlify Badge & HUD Suppressor -->
+    <style>
+      #nl-badge-frame,
+      #nl-hud-frame,
+      iframe[title="Powered by Netlify"],
+      iframe[title="Netlify"],
+      iframe[id^="nl-"] {
+        display: none !important;
+        visibility: hidden !important;
+        opacity: 0 !important;
+        pointer-events: none !important;
+        clip: rect(0, 0, 0, 0) !important;
+        clip-path: polygon(0 0, 0 0, 0 0, 0 0) !important;
+        width: 0 !important;
+        height: 0 !important;
+        position: absolute !important;
+        left: -9999px !important;
+        top: -9999px !important;
+        z-index: -99999 !important;
+      }
+    </style>
+    <script>
+      (function() {
+        const removeNetlifyBadge = () => {
+          const badElements = document.querySelectorAll(
+            '#nl-badge-frame, #nl-hud-frame, iframe[title="Powered by Netlify"], iframe[title="Netlify"], script[data-nf-variant]'
+          );
+          badElements.forEach(el => el.remove());
+        };
+        removeNetlifyBadge();
+        if (typeof MutationObserver !== 'undefined') {
+          new MutationObserver((mutations) => {
+            for (const mutation of mutations) {
+              for (const node of mutation.addedNodes) {
+                if (node.nodeType === 1) {
+                  if (
+                    node.id === 'nl-badge-frame' ||
+                    node.id === 'nl-hud-frame' ||
+                    (node.tagName === 'IFRAME' && (node.title === 'Powered by Netlify' || node.title === 'Netlify')) ||
+                    (node.tagName === 'SCRIPT' && node.dataset && node.dataset.nfVariant)
+                  ) {
+                    node.remove();
+                  }
+                }
+              }
+            }
+          }).observe(document.documentElement, { childList: true, subtree: true });
+        }
+      })();
+    </script>
   </head>
   <body class="antialiased">
     <div id="root"></div>

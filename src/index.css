@@ -539,3 +539,23 @@ dialog.app-alert-modal::backdrop {
     animation: none !important;
   }
 }
+
+/* Supressor global do Netlify Drawer & "Powered by Netlify" Badge */
+#nl-badge-frame,
+#nl-hud-frame,
+iframe[title="Powered by Netlify"],
+iframe[title="Netlify"],
+iframe[id^="nl-"] {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+  clip: rect(0, 0, 0, 0) !important;
+  clip-path: polygon(0 0, 0 0, 0 0, 0 0) !important;
+  width: 0 !important;
+  height: 0 !important;
+  position: absolute !important;
+  left: -9999px !important;
+  top: -9999px !important;
+  z-index: -99999 !important;
+}

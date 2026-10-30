@@ -151,6 +151,14 @@ export const SmartConverterHero: React.FC<SmartConverterHeroProps> = ({
   const isArsInput = inputCurrency === 'ARS';
   const isUsdInput = inputCurrency === 'USD';
 
+  const activeCardBank =
+    selectedBankSlug === 'manual'
+      ? null
+      : oficialBanks.find((b) => b.slug === selectedBankSlug) ||
+        oficialBanks.find((b) => b.slug === 'uala') ||
+        oficialBanks[0] ||
+        null;
+
   const switchPaymentModeSmooth = (nextMode: PaymentMode) => {
     if (nextMode === paymentMode) return;
 
@@ -512,36 +520,40 @@ export const SmartConverterHero: React.FC<SmartConverterHeroProps> = ({
           {/* Cabeçalho do Cartão / Pix */}
           <div className="relative z-10 flex items-center justify-between gap-2">
             <div className="flex items-center gap-2 min-w-0">
-              {isCardMode ? (
-                <span className="tracking-[0.18em] text-xs font-bold text-white/75 shrink-0">
-                  ••••
-                </span>
-              ) : (
-                <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-white/20">
-                  {activePixProvider ? (
+              <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-white/20">
+                {isCardMode ? (
+                  activeCardBank?.logoUrl ? (
                     <ProviderAvatar
-                      src={activePixProvider.logo}
-                      name={activePixName}
+                      src={activeCardBank.logoUrl}
+                      name={activeBankName}
                       sizeClass="h-4 w-4"
                     />
                   ) : (
-                    <PixDiamondIcon className="h-3.5 w-3.5 text-white" />
-                  )}
-                </span>
-              )}
+                    <CreditCard className="h-3.5 w-3.5 text-white" />
+                  )
+                ) : activePixProvider ? (
+                  <ProviderAvatar
+                    src={activePixProvider.logo}
+                    name={activePixName}
+                    sizeClass="h-4 w-4"
+                  />
+                ) : (
+                  <PixDiamondIcon className="h-3.5 w-3.5 text-white" />
+                )}
+              </span>
 
               <span className="truncate text-xs sm:text-[13px] font-extrabold text-white">
                 {isCardMode
-                  ? `No cartão de crédito - (dólar ${activeBankName})`
+                  ? `Cartão de Crédito - ${activeBankName}`
                   : `Transferência Pix - ${activePixName}`}
               </span>
             </div>
 
             {isCardMode ? (
-              <div className="flex items-center shrink-0" aria-hidden="true">
-                <span className="h-5 w-5 rounded-full bg-white/80" />
-                <span className="-ml-2 h-5 w-5 rounded-full bg-white/45" />
-              </div>
+              <span className="inline-flex items-center gap-1 rounded-full bg-white/20 px-2.5 py-0.5 text-[10px] font-extrabold uppercase tracking-wider text-white shrink-0">
+                <CreditCard className="h-3 w-3 text-white" />
+                Cartão
+              </span>
             ) : (
               <span className="inline-flex items-center gap-1 rounded-full bg-white/20 px-2.5 py-0.5 text-[10px] font-extrabold uppercase tracking-wider text-white shrink-0">
                 <PixDiamondIcon className="h-3 w-3 text-white" />
@@ -629,7 +641,7 @@ export const SmartConverterHero: React.FC<SmartConverterHeroProps> = ({
             ) : (
               <>
                 <div className="text-white/90 tabular-nums">
-                  <span>No cartão (dólar {activeBankName}): </span>
+                  <span>No cartão ({activeBankName}): </span>
                   <strong className="font-extrabold text-white">
                     {isArsInput
                       ? `R$ ${formatBrl(reverseBrlOnCard)}`

@@ -25,6 +25,13 @@
   status = 200
   force = true
 
+# Bloqueio do script HUD injetado pelo Netlify
+[[redirects]]
+  from = "/.netlify/scripts/hud*"
+  to = "/index.html"
+  status = 404
+  force = true
+
 # SPA Fallback
 [[redirects]]
   from = "/*"

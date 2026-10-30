@@ -395,7 +395,7 @@ export const App: React.FC = () => {
     return {
       activePixProvider: defaultGalicia || null,
       activePixRate: defaultGalicia?.effectiveArsPerBrl ?? 300.42,
-      activePixName: defaultGalicia?.prettyName ?? 'Banco Galicia (MODO)',
+      activePixName: defaultGalicia?.prettyName ?? 'Banco Galicia',
     };
   }, [
     cotacaoArqNumeric,
@@ -556,26 +556,6 @@ export const App: React.FC = () => {
     if (choice.outcome === 'accepted') {
       setDeferredInstallPrompt(null);
     }
-  };
-
-  const handleLoadEmpiricalBenchmark = () => {
-    setUserState((prev) => ({
-      ...prev,
-      paymentMode: 'card',
-      inputCurrency: 'BRL',
-      converterDirection: 'BRL_TO_ARS',
-      arqRateInput: '330,30',
-      isArqManual: true,
-      selectedBankSlug: 'manual',
-      manualOficialInput: '1540',
-      purchaseBrlInput: '10,64',
-      config: {
-        ...prev.config,
-        cardSpread: 0.0079,
-        customSpotUsdBrl: 4.9652,
-      },
-    }));
-    showToast('🎯 Benchmark R$ 10,64 → US$ 2,16 ($3.326,40 ARS) carregado!');
   };
 
   const handleRestoreLiveDefaults = () => {
@@ -748,7 +728,7 @@ export const App: React.FC = () => {
               arqRateInput: formatArs(liveRate),
               isArqManual: false,
             }));
-            showToast(`Cotação Banco Galicia (MODO) ao vivo restaurada: $${formatArs(liveRate)}`);
+            showToast(`Cotação Banco Galicia ao vivo restaurada: $${formatArs(liveRate)}`);
           }}
           onSelectBank={(slug) =>
             setUserState((prev) => ({
@@ -892,7 +872,6 @@ export const App: React.FC = () => {
             };
           });
         }}
-        onLoadEmpiricalBenchmark={handleLoadEmpiricalBenchmark}
         onRestoreLiveDefaults={handleRestoreLiveDefaults}
       />
 

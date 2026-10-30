@@ -41,8 +41,8 @@ const PIX_PRETTY_NAMES: Record<string, string> = {
   buepp: 'Buepp',
   saldo: 'Saldo.ar',
   'banco-credicoop': 'Banco Credicoop',
-  'banco-galicia': 'Banco Galicia (MODO)',
-  modo: 'Banco Galicia (MODO)',
+  'banco-galicia': 'Banco Galicia',
+  modo: 'Banco Galicia',
   'banco-santander': 'Santander',
   'banco-nacion': 'Banco Nación',
   'banco-macro': 'Banco Macro',
@@ -623,7 +623,7 @@ async function fetchPixProvidersWithFallbacks(
   if (!finalProviders.some((p) => p.slug === 'banco-galicia')) {
     finalProviders.push({
       slug: 'banco-galicia',
-      prettyName: 'Banco Galicia (MODO)',
+      prettyName: 'Banco Galicia',
       arsPerBrlDirect: galiciaPixRate,
       usdPerBrl: 0.192,
       usdSymbol: 'BRLUSD',
@@ -699,7 +699,7 @@ export const CALIBRATED_FALLBACK_BUNDLE: LiveMarketBundle = {
   pixProviders: [
     {
       slug: 'banco-galicia',
-      prettyName: 'Banco Galicia (MODO)',
+      prettyName: 'Banco Galicia',
       arsPerBrlDirect: 300.42,
       usdPerBrl: 0.192,
       usdSymbol: 'BRLUSD',
