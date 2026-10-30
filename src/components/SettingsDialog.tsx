@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   Building2,
+  Loader2,
   Monitor,
   Moon,
   RotateCcw,
@@ -47,6 +48,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
   onRestoreLiveDefaults,
 }) => {
   const dialogRef = useRef<HTMLDialogElement>(null);
+  const [isResetting, setIsResetting] = useState(false);
   const [spreadInput, setSpreadInput] = useState(() =>
     (config.cardSpread * 100).toFixed(2).replace('.', ',')
   );
@@ -383,18 +385,31 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
             </button>
           </div>
 
-          {/* 4. Ações Rápidas */}
+          {/* 4. Ações Rápidas (Reset de Fábrica) */}
           <div className="pt-1">
             <button
               type="button"
+              disabled={isResetting}
               onClick={() => {
+                setIsResetting(true);
                 onRestoreLiveDefaults();
-                void handleRequestClose();
+                setTimeout(() => {
+                  setIsResetting(false);
+                  void handleRequestClose();
+                }, 350);
               }}
-              className="bank-subtle flex min-h-[46px] w-full items-center justify-center gap-2 rounded-2xl px-3 py-2.5 text-xs font-bold text-[var(--text-primary)] active:scale-95 transition"
+              className="bank-subtle flex min-h-[46px] w-full items-center justify-center gap-2 rounded-2xl px-3 py-2.5 text-xs font-bold text-[var(--text-primary)] active:scale-95 transition disabled:opacity-60 cursor-pointer"
             >
-              <RotateCcw className="h-4 w-4 shrink-0 text-[var(--brand-primary)]" />
-              <span>Restaurar Tudo Ao Vivo</span>
+              {isResetting ? (
+                <Loader2 className="h-4 w-4 shrink-0 animate-spin text-[var(--brand-primary)]" />
+              ) : (
+                <RotateCcw className="h-4 w-4 shrink-0 text-[var(--brand-primary)]" />
+              )}
+              <span>
+                {isResetting
+                  ? 'Redefinindo padrões...'
+                  : 'Redefinir para Padrões de Fábrica'}
+              </span>
             </button>
           </div>
 

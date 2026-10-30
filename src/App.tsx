@@ -578,7 +578,7 @@ export const App: React.FC = () => {
         davidGuardEnabled: prev.config.davidGuardEnabled,
       },
     }));
-    showToast('⚡ Padrão Ualá + Banco Galicia (ao vivo) restaurado!');
+    showToast('⚡ Padrões de fábrica restaurados com sucesso!');
   };
 
   const handleSecretTripleTap = () => {

@@ -1,6 +1,7 @@
 import React, { useRef } from 'react';
 import {
   Download,
+  Loader2,
   Moon,
   RefreshCw,
   SlidersHorizontal,
@@ -102,7 +103,14 @@ export const LiveHeader: React.FC<LiveHeaderProps> = ({
             </div>
 
             <div className="flex items-center gap-1.5 text-[11px] text-[var(--text-muted)]">
-              {isFromCache ? (
+              {isRefreshing ? (
+                <>
+                  <Loader2 className="h-3 w-3 animate-spin text-[var(--brand-primary)] shrink-0" />
+                  <span className="truncate font-bold text-[var(--brand-primary)]">
+                    Atualizando cotações...
+                  </span>
+                </>
+              ) : isFromCache ? (
                 <>
                   <WifiOff className="h-3 w-3 text-amber-500 shrink-0" />
                   <span className="truncate">
@@ -166,13 +174,13 @@ export const LiveHeader: React.FC<LiveHeaderProps> = ({
             onClick={onRefresh}
             disabled={isRefreshing}
             aria-label="Atualizar cotações agora"
-            className="bank-surface flex h-10 w-10 items-center justify-center rounded-2xl text-[var(--text-primary)] transition active:scale-95 disabled:opacity-50"
+            className="bank-surface flex h-10 w-10 items-center justify-center rounded-2xl text-[var(--text-primary)] transition active:scale-95 disabled:opacity-75"
           >
-            <RefreshCw
-              className={`h-4 w-4 ${
-                isRefreshing ? 'animate-spin text-[var(--brand-primary)]' : ''
-              }`}
-            />
+            {isRefreshing ? (
+              <Loader2 className="h-4 w-4 animate-spin text-[var(--brand-primary)]" />
+            ) : (
+              <RefreshCw className="h-4 w-4" />
+            )}
           </button>
 
           <button
