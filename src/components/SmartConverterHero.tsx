@@ -80,7 +80,7 @@ const BRL_PRESETS: AmountPreset[] = [
   { label: 'R$ 250', value: '250' },
   { label: 'R$ 400', value: '400' },
   { label: 'R$ 500', value: '500' },
-  { label: 'R$ 10,64 🎯', value: '10,64', title: 'Compra real de calibração' },
+  { label: 'R$ 1.000', value: '1000' },
 ];
 
 const USD_PRESETS: AmountPreset[] = [
@@ -209,6 +209,12 @@ export const SmartConverterHero: React.FC<SmartConverterHeroProps> = ({
   const reverseBrlOnPix = activePixRate > 0 ? arsNumeric / activePixRate : 0;
   const reverseUsdOnCard = activeOficialRate > 0 ? arsNumeric / activeOficialRate : 0;
   const reverseDiffBrl = reverseBrlOnCard - reverseBrlOnPix;
+  const baseReverseBrl = Math.max(reverseBrlOnCard, reverseBrlOnPix);
+  const reverseDiffPct =
+    baseReverseBrl > 0 ? (Math.abs(reverseDiffBrl) / baseReverseBrl) * 100 : 0;
+
+  const cardSaves = isArsInput ? reverseDiffBrl <= 0 : diffPixMinusCardArs >= 0;
+  const pixSaves = isArsInput ? reverseDiffBrl >= 0 : diffPixMinusCardArs <= 0;
 
   // Número principal exibido gigante dentro do cartão (Roxo ou Verde)
   const primaryDisplayFormatted = isArsInput
@@ -594,20 +600,29 @@ export const SmartConverterHero: React.FC<SmartConverterHeroProps> = ({
                   </strong>
                 </div>
 
-                <div className="inline-flex items-center gap-1 rounded-full bg-emerald-400/28 px-2.5 py-0.5 font-extrabold text-white tabular-nums">
+                <div
+                  className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 font-extrabold tabular-nums shadow-sm transition animate-pulse ${
+                    cardSaves
+                      ? 'bg-emerald-500/80 text-white border border-emerald-300/40'
+                      : 'bg-rose-500/85 text-white border border-rose-300/50'
+                  }`}
+                >
                   {isArsInput ? (
-                    reverseDiffBrl >= 0 ? (
-                      <>+ R$ {formatBrl(Math.abs(reverseDiffBrl))} a mais ✅</>
+                    cardSaves ? (
+                      <>Economiza R$ {formatBrl(Math.abs(reverseDiffBrl))} (-{formatPct(reverseDiffPct, 1)})</>
                     ) : (
-                      <>Pix rende + R$ {formatBrl(Math.abs(reverseDiffBrl))}</>
+                      <>Perde R$ {formatBrl(Math.abs(reverseDiffBrl))} (+{formatPct(reverseDiffPct, 1)})</>
                     )
-                  ) : diffPixMinusCardArs >= 0 ? (
+                  ) : cardSaves ? (
                     <>
                       Economiza $ {formatArs(Math.abs(diffPixMinusCardArs), 0)} (
                       {formatPct(diffPctCardVsPix, 1)})
                     </>
                   ) : (
-                    <>Pix ganha por $ {formatArs(Math.abs(diffPixMinusCardArs), 0)}</>
+                    <>
+                      Perde $ {formatArs(Math.abs(diffPixMinusCardArs), 0)} (+
+                      {formatPct(Math.abs(diffPctCardVsPix), 1)})
+                    </>
                   )}
                 </div>
               </>
@@ -625,18 +640,28 @@ export const SmartConverterHero: React.FC<SmartConverterHeroProps> = ({
                 <button
                   type="button"
                   onClick={() => switchPaymentModeSmooth('card')}
-                  className="inline-flex items-center gap-1 rounded-full bg-white/22 hover:bg-white/30 px-2.5 py-0.5 font-extrabold text-white tabular-nums transition active:scale-95"
+                  className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 font-extrabold tabular-nums shadow-sm transition active:scale-95 animate-pulse ${
+                    pixSaves
+                      ? 'bg-emerald-500/80 text-white border border-emerald-300/40'
+                      : 'bg-rose-500/85 text-white border border-rose-300/50'
+                  }`}
                 >
                   {isArsInput ? (
-                    reverseDiffBrl > 0 ? (
-                      <>Cartão dá + R$ {formatBrl(Math.abs(reverseDiffBrl))} 💡</>
+                    pixSaves ? (
+                      <>Pix economiza R$ {formatBrl(Math.abs(reverseDiffBrl))} (-{formatPct(reverseDiffPct, 1)})</>
                     ) : (
-                      <>Pix rende mais ✅</>
+                      <>Cartão economiza R$ {formatBrl(Math.abs(reverseDiffBrl))} (-{formatPct(reverseDiffPct, 1)})</>
                     )
-                  ) : diffPixMinusCardArs > 0 ? (
-                    <>Cartão economiza $ {formatArs(Math.abs(diffPixMinusCardArs), 0)} 💡</>
+                  ) : pixSaves ? (
+                    <>
+                      Pix economiza $ {formatArs(Math.abs(diffPixMinusCardArs), 0)} (
+                      {formatPct(Math.abs(diffPctCardVsPix), 1)})
+                    </>
                   ) : (
-                    <>Mais barato que o cartão ✅</>
+                    <>
+                      Cartão economiza $ {formatArs(Math.abs(diffPixMinusCardArs), 0)} (
+                      {formatPct(diffPctCardVsPix, 1)})
+                    </>
                   )}
                 </button>
               </>
@@ -747,7 +772,6 @@ export const SmartConverterHero: React.FC<SmartConverterHeroProps> = ({
               ? top5CardBanks.map((bank) => {
                   const bankAsk = bank.ask || 0;
                   const isSelected = selectedBankSlug === bank.slug;
-                  const isUala = bank.slug === 'uala';
                   const rankInAll =
                     oficialBanks.findIndex((b) => b.slug === bank.slug) + 1;
 
@@ -788,22 +812,6 @@ export const SmartConverterHero: React.FC<SmartConverterHeroProps> = ({
                             <span className="truncate text-xs font-extrabold text-[var(--text-primary)]">
                               dólar {bank.prettyName}
                             </span>
-                            {isUala && (
-                              <span className="rounded bg-[#5664F5]/15 px-1.5 py-0.5 text-[9px] font-extrabold text-[var(--brand-primary)]">
-                                PADRÃO
-                              </span>
-                            )}
-                            {rankInAll === 1 && (
-                              <span
-                                style={{
-                                  backgroundColor: 'var(--positive-bg)',
-                                  color: 'var(--positive-text)',
-                                }}
-                                className="rounded px-1.5 py-0.5 text-[9px] font-extrabold"
-                              >
-                                MELHOR
-                              </span>
-                            )}
                           </div>
                           <div className="text-[10px] font-semibold text-[var(--text-muted)] tabular-nums">
                             Dólar Oficial: ${formatArs(bankAsk, 0)}
@@ -835,7 +843,6 @@ export const SmartConverterHero: React.FC<SmartConverterHeroProps> = ({
               : top5PixWallets.map((wallet) => {
                   const wRate = wallet.effectiveArsPerBrl || 0;
                   const isSelected = !isArqManual && selectedPixSlug === wallet.slug;
-                  const isDefaultPix = wallet.slug === 'banco-galicia';
                   const walletsOnly = pixProviders.filter(
                     (p) => p.estimationBasis !== 'Oficial CBU'
                   );
@@ -878,22 +885,6 @@ export const SmartConverterHero: React.FC<SmartConverterHeroProps> = ({
                             <span className="truncate text-xs font-extrabold text-[var(--text-primary)]">
                               {wallet.prettyName}
                             </span>
-                            {isDefaultPix && (
-                              <span className="rounded bg-emerald-500/15 px-1.5 py-0.5 text-[9px] font-extrabold text-emerald-600 dark:text-emerald-400">
-                                PADRÃO
-                              </span>
-                            )}
-                            {rankInPix === 1 && (
-                              <span
-                                style={{
-                                  backgroundColor: 'var(--positive-bg)',
-                                  color: 'var(--positive-text)',
-                                }}
-                                className="rounded px-1.5 py-0.5 text-[9px] font-extrabold"
-                              >
-                                MELHOR
-                              </span>
-                            )}
                           </div>
                           <div className="text-[10px] font-semibold text-[var(--text-muted)] tabular-nums">
                             Cotação: ${formatArs(wRate)} / R$ 1

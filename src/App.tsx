@@ -54,20 +54,37 @@ function resolveDefaultBankSlug(bundle: LiveMarketBundle): string {
 
 function loadInitialUserState(initialBundle: LiveMarketBundle): PersistedUserState {
   const defaultBank = resolveDefaultBankSlug(initialBundle);
+  const galiciaRate =
+    initialBundle.pixProviders.find((p) => p.slug === 'banco-galicia')
+      ?.effectiveArsPerBrl ?? 300.42;
 
   try {
     const raw = localStorage.getItem(USER_STATE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw) as Partial<PersistedUserState>;
+      const config: CalculatorConfig = {
+        ...DEFAULT_CONFIG,
+        ...(parsed.config || {}),
+      };
+
+      const isLegacyDefaultPix =
+        !parsed.selectedPixSlug ||
+        parsed.selectedPixSlug === 'arq' ||
+        parsed.selectedPixSlug === 'banco-credicoop';
+
+      const resolvedPixSlug = isLegacyDefaultPix
+        ? config.defaultPixSlug || 'banco-galicia'
+        : parsed.selectedPixSlug;
+
       return {
         arqRateInput:
-          parsed.arqRateInput || formatArs(initialBundle.arqLiveRate ?? 308),
+          resolvedPixSlug === 'banco-galicia'
+            ? formatArs(galiciaRate)
+            : parsed.arqRateInput || formatArs(initialBundle.arqLiveRate ?? 308),
         isArqManual: Boolean(parsed.isArqManual),
-        selectedBankSlug: parsed.selectedBankSlug || defaultBank,
-        selectedPixSlug:
-          !parsed.selectedPixSlug || parsed.selectedPixSlug === 'arq'
-            ? 'banco-galicia'
-            : parsed.selectedPixSlug,
+        selectedBankSlug:
+          parsed.selectedBankSlug || config.defaultBankSlug || defaultBank,
+        selectedPixSlug: resolvedPixSlug,
         paymentMode: parsed.paymentMode || 'card',
         inputCurrency: parsed.inputCurrency || 'BRL',
         manualOficialInput: parsed.manualOficialInput || '1553',
@@ -75,10 +92,7 @@ function loadInitialUserState(initialBundle: LiveMarketBundle): PersistedUserSta
         usdAmountInput: parsed.usdAmountInput || '20',
         arsBudgetInput: parsed.arsBudgetInput || '30000',
         converterDirection: parsed.converterDirection || 'BRL_TO_ARS',
-        config: {
-          ...DEFAULT_CONFIG,
-          ...(parsed.config || {}),
-        },
+        config,
       };
     }
   } catch {
@@ -86,10 +100,10 @@ function loadInitialUserState(initialBundle: LiveMarketBundle): PersistedUserSta
   }
 
   return {
-    arqRateInput: formatArs(initialBundle.arqLiveRate ?? 308),
+    arqRateInput: formatArs(galiciaRate),
     isArqManual: false,
-    selectedBankSlug: defaultBank,
-    selectedPixSlug: 'banco-galicia',
+    selectedBankSlug: DEFAULT_CONFIG.defaultBankSlug || defaultBank,
+    selectedPixSlug: DEFAULT_CONFIG.defaultPixSlug || 'banco-galicia',
     paymentMode: 'card',
     inputCurrency: 'BRL',
     manualOficialInput: '1553',
@@ -574,8 +588,8 @@ export const App: React.FC = () => {
       converterDirection: 'BRL_TO_ARS',
       arqRateInput: formatArs(liveArq),
       isArqManual: false,
-      selectedBankSlug: defaultBank,
-      selectedPixSlug: 'banco-galicia',
+      selectedBankSlug: DEFAULT_CONFIG.defaultBankSlug || defaultBank,
+      selectedPixSlug: DEFAULT_CONFIG.defaultPixSlug || 'banco-galicia',
       purchaseBrlInput: '100',
       usdAmountInput: '20',
       arsBudgetInput: '30000',
@@ -857,11 +871,27 @@ export const App: React.FC = () => {
         liveSpotUsdBrl={market.spotUsdBrl.bid}
         themePreference={themePref}
         systemTheme={systemTheme}
+        oficialBanks={market.oficialBanks}
+        pixProviders={market.pixProviders}
         onChangeThemePreference={handleExplicitThemeChange}
         onClose={() => setIsSettingsOpen(false)}
-        onUpdateConfig={(next: CalculatorConfig) =>
-          setUserState((prev) => ({ ...prev, config: next }))
-        }
+        onUpdateConfig={(next: CalculatorConfig) => {
+          setUserState((prev) => {
+            const bankChanged =
+              next.defaultBankSlug !== prev.config.defaultBankSlug;
+            const pixChanged = next.defaultPixSlug !== prev.config.defaultPixSlug;
+            return {
+              ...prev,
+              config: next,
+              selectedBankSlug: bankChanged
+                ? next.defaultBankSlug
+                : prev.selectedBankSlug,
+              selectedPixSlug: pixChanged
+                ? next.defaultPixSlug
+                : prev.selectedPixSlug,
+            };
+          });
+        }}
         onLoadEmpiricalBenchmark={handleLoadEmpiricalBenchmark}
         onRestoreLiveDefaults={handleRestoreLiveDefaults}
       />

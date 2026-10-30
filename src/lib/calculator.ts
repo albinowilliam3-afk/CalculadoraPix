@@ -6,6 +6,8 @@ export const DEFAULT_CONFIG: CalculatorConfig = {
   cardSpread: 0.0079, // 0,79% spread interbancário Visa/Mastercard + arredondamento
   customSpotUsdBrl: null,
   davidGuardEnabled: true,
+  defaultBankSlug: 'uala',
+  defaultPixSlug: 'banco-galicia',
 };
 
 /**

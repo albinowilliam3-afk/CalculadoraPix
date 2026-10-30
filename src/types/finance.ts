@@ -77,6 +77,10 @@ export interface CalculatorConfig {
   customSpotUsdBrl: number | null;
   /** Filtro Anti-Impulso David (Easter Egg sutil) */
   davidGuardEnabled: boolean;
+  /** Banco padrão permanente configurado para o Cartão de Crédito */
+  defaultBankSlug: string;
+  /** Carteira Pix padrão permanente configurada */
+  defaultPixSlug: string;
 }
 
 export type PaymentMode = 'card' | 'pix';

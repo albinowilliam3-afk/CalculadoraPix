@@ -1,18 +1,24 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   Beaker,
+  Building2,
   Monitor,
   Moon,
   RotateCcw,
   ShieldCheck,
   SlidersHorizontal,
   Sun,
+  Wallet,
   X,
 } from 'lucide-react';
-import { formatBrl, parseFlexibleDecimal } from '../lib/formatters';
+import { formatArs, formatBrl, parseFlexibleDecimal } from '../lib/formatters';
 import type { ResolvedTheme, ThemePreference } from '../lib/theme';
 import { attachDialogFallbacks, closeTopLayerDialog } from '../lib/topLayerDialog';
-import type { CalculatorConfig } from '../types/finance';
+import type {
+  CalculatorConfig,
+  PixProviderNormalized,
+  UsdProviderQuote,
+} from '../types/finance';
 
 interface SettingsDialogProps {
   isOpen: boolean;
@@ -20,6 +26,8 @@ interface SettingsDialogProps {
   liveSpotUsdBrl: number;
   themePreference: ThemePreference;
   systemTheme: ResolvedTheme;
+  oficialBanks: UsdProviderQuote[];
+  pixProviders: PixProviderNormalized[];
   onChangeThemePreference: (pref: ThemePreference) => void;
   onClose: () => void;
   onUpdateConfig: (next: CalculatorConfig) => void;
@@ -33,6 +41,8 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
   liveSpotUsdBrl,
   themePreference,
   systemTheme,
+  oficialBanks,
+  pixProviders,
   onChangeThemePreference,
   onClose,
   onUpdateConfig,
@@ -191,7 +201,73 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
             </div>
           </fieldset>
 
-          {/* 1. Spread da Bandeira */}
+          {/* 1. Instituições Padrão (Cartão & Pix) */}
+          <div className="bank-subtle rounded-2xl p-3.5 space-y-3">
+            <div>
+              <div className="flex items-center gap-1.5 text-xs font-bold text-[var(--text-primary)]">
+                <Building2 className="h-4 w-4 text-[var(--brand-primary)]" />
+                <span>Instituições Padrão ao Abrir o App</span>
+              </div>
+              <p className="mt-0.5 text-[11px] text-[var(--text-muted)]">
+                Escolha o banco oficial e a carteira Pix que carregarão como padrão permanente.
+              </p>
+            </div>
+
+            <div>
+              <label
+                htmlFor="default-bank-select"
+                className="block text-xs font-bold text-[var(--text-primary)]"
+              >
+                Banco Padrão do Cartão
+              </label>
+              <select
+                id="default-bank-select"
+                value={config.defaultBankSlug || 'uala'}
+                onChange={(e) => {
+                  onUpdateConfig({
+                    ...config,
+                    defaultBankSlug: e.target.value,
+                  });
+                }}
+                className="bank-input mt-1.5 w-full rounded-xl px-3 py-2 text-xs font-bold text-[var(--text-primary)] bg-[var(--bg-card)] cursor-pointer"
+              >
+                {oficialBanks.map((b) => (
+                  <option key={b.slug} value={b.slug}>
+                    {b.prettyName} (Dólar Oficial: ${formatArs(b.ask || 0, 0)})
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="pt-2 border-t border-[var(--border-subtle)]">
+              <label
+                htmlFor="default-pix-select"
+                className="flex items-center gap-1.5 text-xs font-bold text-[var(--text-primary)]"
+              >
+                <Wallet className="h-3.5 w-3.5 text-emerald-500" />
+                <span>Carteira Pix Padrão</span>
+              </label>
+              <select
+                id="default-pix-select"
+                value={config.defaultPixSlug || 'banco-galicia'}
+                onChange={(e) => {
+                  onUpdateConfig({
+                    ...config,
+                    defaultPixSlug: e.target.value,
+                  });
+                }}
+                className="bank-input mt-1.5 w-full rounded-xl px-3 py-2 text-xs font-bold text-[var(--text-primary)] bg-[var(--bg-card)] cursor-pointer"
+              >
+                {pixProviders.map((p) => (
+                  <option key={p.slug} value={p.slug}>
+                    {p.prettyName} (${formatArs(p.effectiveArsPerBrl || 0)} / R$ 1)
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {/* 2. Spread da Bandeira */}
           <div className="bank-subtle rounded-2xl p-3.5">
             <label
               htmlFor="spread-bandeira-input"
@@ -311,30 +387,35 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
           </div>
 
           {/* 4. Ações Rápidas */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
-            <button
-              type="button"
-              onClick={() => {
-                onLoadEmpiricalBenchmark();
-                void handleRequestClose();
-              }}
-              className="flex min-h-[46px] items-center justify-center gap-2 rounded-2xl bg-[#5664F5]/12 px-3 py-2.5 text-xs font-bold text-[var(--brand-primary)] active:scale-95 transition"
-            >
-              <Beaker className="h-4 w-4 shrink-0" />
-              <span>Testar Benchmark R$ 10,64</span>
-            </button>
+          <div className="space-y-1.5 pt-1">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  onLoadEmpiricalBenchmark();
+                  void handleRequestClose();
+                }}
+                className="flex min-h-[46px] items-center justify-center gap-2 rounded-2xl bg-[#5664F5]/12 px-3 py-2.5 text-xs font-bold text-[var(--brand-primary)] active:scale-95 transition"
+              >
+                <Beaker className="h-4 w-4 shrink-0" />
+                <span>Simular Compra Teste (R$ 10,64)</span>
+              </button>
 
-            <button
-              type="button"
-              onClick={() => {
-                onRestoreLiveDefaults();
-                void handleRequestClose();
-              }}
-              className="bank-subtle flex min-h-[46px] items-center justify-center gap-2 rounded-2xl px-3 py-2.5 text-xs font-bold text-[var(--text-primary)] active:scale-95 transition"
-            >
-              <RotateCcw className="h-4 w-4 shrink-0" />
-              <span>Restaurar Tudo Ao Vivo</span>
-            </button>
+              <button
+                type="button"
+                onClick={() => {
+                  onRestoreLiveDefaults();
+                  void handleRequestClose();
+                }}
+                className="bank-subtle flex min-h-[46px] items-center justify-center gap-2 rounded-2xl px-3 py-2.5 text-xs font-bold text-[var(--text-primary)] active:scale-95 transition"
+              >
+                <RotateCcw className="h-4 w-4 shrink-0" />
+                <span>Restaurar Tudo Ao Vivo</span>
+              </button>
+            </div>
+            <p className="text-[10px] text-[var(--text-muted)] text-center">
+              R$ 10,64 foi o valor da compra real em maquininha argentina usada para calibrar o spread de 0,79% da bandeira.
+            </p>
           </div>
 
           <button
