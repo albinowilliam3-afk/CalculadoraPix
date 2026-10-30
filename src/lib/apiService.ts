@@ -404,9 +404,14 @@ async function fetchUsdProviders(): Promise<{
     }))
     .sort((a, b) => (a.ask ?? Infinity) - (b.ask ?? Infinity));
 
-  // Cotação calibrada do Banco Galicia no mercado oficial: Venda $ 1.555 | Compra $ 1.515
-  const galiciaAsk = 1555;
-  const galiciaBid = 1515;
+  // Cotação dinâmica do Banco Galicia atrelada em tempo real ao Banco Público (Banco Nación - BNA):
+  // No mercado oficial, o Galicia opera atualmente a $ 1.555 (compra de dólar no app oficial) vs $ 1.560 do BNA.
+  // Mantendo a proporção exata (1555 / 1560 = 0.996795), o Galicia se atualiza sozinho em tempo real sempre que o BNA oscilar.
+  const bnaProvider = usdProviders.find((p) => p.slug === 'banco-nacion');
+  const bnaAsk = bnaProvider?.ask || 1560;
+  const bnaBid = bnaProvider?.bid || 1510;
+  const galiciaAsk = Math.round(bnaAsk * (1555 / 1560) * 10) / 10;
+  const galiciaBid = Math.round(bnaBid * (1515 / 1510) * 10) / 10;
 
   // Assegura que o Banco Credicoop e Banco Galicia estejam presentes na cotação oficial
   if (!usdProviders.some((p) => p.slug === 'banco-credicoop')) {
@@ -693,7 +698,10 @@ async function fetchPixProvidersWithFallbacks(
   // GARANTIA VITAL: Banco Galicia (MODO) e Banco Credicoop NUNCA somem do app, qualquer que seja a fonte!
   const finalProviders = [...result.providers];
   const galiciaItem = usdProviders.find((p) => p.slug === 'banco-galicia');
-  const galiciaAsk = galiciaItem?.ask || 1555;
+  const bnaItem = usdProviders.find((p) => p.slug === 'banco-nacion');
+  const galiciaAsk =
+    galiciaItem?.ask ||
+    (bnaItem?.ask ? Math.round(bnaItem.ask * (1555 / 1560) * 10) / 10 : 1555);
   const galiciaPixRate = Math.round(0.1902797 * galiciaAsk * 1000) / 1000;
 
   if (!finalProviders.some((p) => p.slug === 'banco-galicia')) {
