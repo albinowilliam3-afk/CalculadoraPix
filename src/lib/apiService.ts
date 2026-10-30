@@ -6,7 +6,7 @@ import type {
   UsdProviderQuote,
 } from '../types/finance';
 
-const MARKET_CACHE_KEY = 'pesopix_market_cache_v3';
+const MARKET_CACHE_KEY = 'pesopix_market_cache_v4';
 
 const PIX_PRETTY_NAMES: Record<string, string> = {
   arq: 'ARQ (DolarApp)',
@@ -41,7 +41,8 @@ const PIX_PRETTY_NAMES: Record<string, string> = {
   buepp: 'Buepp',
   saldo: 'Saldo.ar',
   'banco-credicoop': 'Banco Credicoop',
-  'banco-galicia': 'Banco Galicia',
+  'banco-galicia': 'Banco Galicia (MODO)',
+  modo: 'Banco Galicia (MODO)',
   'banco-santander': 'Santander',
   'banco-nacion': 'Banco Nación',
   'banco-macro': 'Banco Macro',
@@ -173,11 +174,15 @@ function normalizeComparaPix(
 
     let effectiveArsPerBrl = arsPerBrlDirect;
     let isEstimatedArs = false;
-    let estimationBasis: 'Oficial CBU' | 'Cripto/CCL' | undefined;
+    let estimationBasis: 'Oficial CBU' | 'Cripto/CCL' | 'MODO' | undefined;
 
     if (effectiveArsPerBrl === null && usdPerBrl !== null) {
       isEstimatedArs = true;
-      if (isArgentineBankSlug(slug)) {
+      if (slug === 'banco-galicia' || slug === 'modo') {
+        const galiciaAsk = usdAskBySlug.get('banco-galicia') || 1564.67;
+        effectiveArsPerBrl = usdPerBrl * galiciaAsk;
+        estimationBasis = 'MODO';
+      } else if (isArgentineBankSlug(slug)) {
         const bankSpecificAsk = usdAskBySlug.get(slug) || defaultOficialAsk;
         effectiveArsPerBrl = usdPerBrl * bankSpecificAsk;
         estimationBasis = 'Oficial CBU';
@@ -287,7 +292,7 @@ function normalizeCriptoYaFallback(
 
     let effectiveArsPerBrl = arsPerBrlDirect;
     let isEstimatedArs = false;
-    let estimationBasis: 'Oficial CBU' | 'Cripto/CCL' | undefined;
+    let estimationBasis: 'Oficial CBU' | 'Cripto/CCL' | 'MODO' | undefined;
 
     if (effectiveArsPerBrl === null && usdPerBrl !== null) {
       isEstimatedArs = true;
@@ -389,7 +394,7 @@ async function fetchUsdProviders(): Promise<{
     }))
     .sort((a, b) => (a.ask ?? Infinity) - (b.ask ?? Infinity));
 
-  // Assegura que o Banco Credicoop esteja presente na cotação oficial
+  // Assegura que o Banco Credicoop e Banco Galicia estejam presentes na cotação oficial
   if (!usdProviders.some((p) => p.slug === 'banco-credicoop')) {
     usdProviders.push({
       slug: 'banco-credicoop',
@@ -406,8 +411,26 @@ async function fetchUsdProviders(): Promise<{
       lastSeenAt: new Date().toISOString(),
       stale: false,
     });
-    usdProviders.sort((a, b) => (a.ask ?? Infinity) - (b.ask ?? Infinity));
   }
+
+  if (!usdProviders.some((p) => p.slug === 'banco-galicia')) {
+    usdProviders.push({
+      slug: 'banco-galicia',
+      name: 'banco-galicia',
+      prettyName: 'Banco Galicia',
+      bid: 1515,
+      ask: 1564.67,
+      logoUrl: 'https://images.compara.ar/banco-galicia.svg',
+      is24x7: false,
+      url: 'https://www.galicia.ar/',
+      pctVariation: 0,
+      isBank: true,
+      usdType: 'Oficial',
+      lastSeenAt: new Date().toISOString(),
+      stale: false,
+    });
+  }
+  usdProviders.sort((a, b) => (a.ask ?? Infinity) - (b.ask ?? Infinity));
 
   const oficialBanks = usdProviders.filter(
     (p) => p.usdType.toLowerCase() === 'oficial' && p.ask && p.ask > 0
@@ -581,6 +604,22 @@ export const CALIBRATED_FALLBACK_BUNDLE: LiveMarketBundle = {
   arqLiveRate: 307.21,
   arqUsdPerBrl: 0.1863,
   pixProviders: [
+    {
+      slug: 'banco-galicia',
+      prettyName: 'Banco Galicia',
+      arsPerBrlDirect: 300.48,
+      usdPerBrl: 0.192,
+      usdSymbol: 'BRLUSD',
+      effectiveArsPerBrl: 300.48,
+      isEstimatedArs: true,
+      estimationBasis: 'Oficial CBU',
+      logo: 'https://images.compara.ar/banco-galicia.svg',
+      url: 'https://www.galicia.ar/',
+      isPix: true,
+      hasFees: false,
+      updatedAt: null,
+      stale: false,
+    },
     {
       slug: 'banco-credicoop',
       prettyName: 'Banco Credicoop',
@@ -808,6 +847,36 @@ export const CALIBRATED_FALLBACK_BUNDLE: LiveMarketBundle = {
       lastSeenAt: null,
       stale: false,
     },
+    {
+      slug: 'banco-galicia',
+      name: 'banco-galicia',
+      prettyName: 'Banco Galicia',
+      bid: 1515,
+      ask: 1564.67,
+      logoUrl: 'https://images.compara.ar/banco-galicia.svg',
+      is24x7: false,
+      url: 'https://www.galicia.ar/',
+      pctVariation: 0,
+      isBank: true,
+      usdType: 'Oficial',
+      lastSeenAt: null,
+      stale: false,
+    },
+    {
+      slug: 'banco-galicia',
+      name: 'banco-galicia',
+      prettyName: 'Banco Galicia',
+      bid: 1515,
+      ask: 1564.67,
+      logoUrl: 'https://images.compara.ar/banco-galicia.svg',
+      is24x7: false,
+      url: 'https://www.galicia.ar/',
+      pctVariation: 0,
+      isBank: true,
+      usdType: 'Oficial',
+      lastSeenAt: null,
+      stale: false,
+    },
   ],
   oficialBanks: [
     {
@@ -879,6 +948,21 @@ export const CALIBRATED_FALLBACK_BUNDLE: LiveMarketBundle = {
       logoUrl: 'https://images.compara.ar/banco-credicoop.svg',
       is24x7: false,
       url: 'https://www.bancocredicoop.coop/',
+      pctVariation: 0,
+      isBank: true,
+      usdType: 'Oficial',
+      lastSeenAt: null,
+      stale: false,
+    },
+    {
+      slug: 'banco-galicia',
+      name: 'banco-galicia',
+      prettyName: 'Banco Galicia',
+      bid: 1515,
+      ask: 1564.67,
+      logoUrl: 'https://images.compara.ar/banco-galicia.svg',
+      is24x7: false,
+      url: 'https://www.galicia.ar/',
       pctVariation: 0,
       isBank: true,
       usdType: 'Oficial',

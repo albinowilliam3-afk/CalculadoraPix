@@ -239,10 +239,13 @@ export const SmartConverterHero: React.FC<SmartConverterHeroProps> = ({
     return combined;
   }, [oficialBanks, selectedBankSlug]);
 
-  // 2) Modo Pix: Top 5 carteiras Pix (garantindo ARQ e Credicoop sempre visíveis)
+  // 2) Modo Pix: Top 5 carteiras Pix (garantindo ARQ, Credicoop e Galicia sempre visíveis)
   const top5PixWallets = React.useMemo(() => {
     const walletsOnly = pixProviders.filter(
-      (p) => p.estimationBasis !== 'Oficial CBU' || p.slug === 'banco-credicoop'
+      (p) =>
+        p.estimationBasis !== 'Oficial CBU' ||
+        p.slug === 'banco-credicoop' ||
+        p.slug === 'banco-galicia'
     );
     const sourceList = walletsOnly.length > 0 ? walletsOnly : pixProviders;
     const topFive = sourceList.slice(0, 5);
@@ -252,16 +255,27 @@ export const SmartConverterHero: React.FC<SmartConverterHeroProps> = ({
       ? sourceList.find((p) => p.slug === 'banco-credicoop')
       : undefined;
 
+    const hasGalicia = topFive.some((p) => p.slug === 'banco-galicia');
+    const galiciaItem = !hasGalicia
+      ? sourceList.find((p) => p.slug === 'banco-galicia')
+      : undefined;
+
     const hasArq = topFive.some((p) => p.slug === 'arq');
     const arqItem = !hasArq ? sourceList.find((p) => p.slug === 'arq') : undefined;
 
     const hasSelected = topFive.some((p) => p.slug === selectedPixSlug);
     const selectedItem =
-      !hasSelected && selectedPixSlug !== 'arq' && selectedPixSlug !== 'banco-credicoop'
+      !hasSelected &&
+      selectedPixSlug !== 'arq' &&
+      selectedPixSlug !== 'banco-credicoop' &&
+      selectedPixSlug !== 'banco-galicia'
         ? sourceList.find((p) => p.slug === selectedPixSlug)
         : undefined;
 
     const combined = [...topFive];
+    if (galiciaItem && !combined.some((p) => p.slug === galiciaItem.slug)) {
+      combined.push(galiciaItem);
+    }
     if (credicoopItem && !combined.some((p) => p.slug === credicoopItem.slug)) {
       combined.push(credicoopItem);
     }

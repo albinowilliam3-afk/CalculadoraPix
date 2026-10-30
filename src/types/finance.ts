@@ -18,7 +18,7 @@ export interface PixProviderNormalized {
   effectiveArsPerBrl: number | null;
   /** Se a cotação em ARS foi estimada a partir do par USD/USDT */
   isEstimatedArs: boolean;
-  estimationBasis?: 'Oficial CBU' | 'Cripto/CCL';
+  estimationBasis?: 'Oficial CBU' | 'Cripto/CCL' | 'MODO';
   logo: string;
   url: string;
   isPix: boolean;
